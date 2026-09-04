@@ -51,8 +51,8 @@ All OLED targets share these hardware-focused changes:
 - Persistent OLED shutdown, physical VEXT control, automatic-wake suppression, and restoration by holding PRG.
 - GPS disabled without powering, resetting, probing, or delaying boot; enabling it later retains VEXT while the GPS is active.
 - TX/status LED suppression for unattended operation.
-- Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware ceiling that keeps estimated output at or below 22 dBm.
-- Temporary-file, backup, and rename-based persistence for identity and configuration stores, with a write guard during critical battery recovery. Explicit deletion removes the primary file together with its `.tmp` and `.bak` recovery sidecars so deleted state cannot reappear after reboot.
+- Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware ceiling that keeps estimated output at or below 22 dBm. An existing persisted `fem_rxgain` value is applied before the new NVS marker is created, so upgrades preserve an explicit LNA-off setting.
+- Temporary-file, backup, and rename-based persistence for identity and configuration stores, with a write guard during critical battery recovery. A temporary identity is promoted only after it signs and verifies a challenge with its stored public/private pair. Explicit deletion removes the primary file together with its `.tmp` and `.bak` recovery sidecars so deleted state cannot reappear after reboot.
 
 The existing MeshCore `tx` setting keeps its historical meaning: requested **SX1262 input power**, not antenna output. The board may lower the applied value according to the detected FEM. For example, the default request of 10 dBm remains 10 dBm on GC1109 but is limited to 9 dBm on KCT8103L.
 
