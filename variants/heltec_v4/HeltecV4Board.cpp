@@ -304,6 +304,10 @@ void HeltecV4Board::begin()
 void HeltecV4Board::loop()
 {
 #if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+  if (inhibit_sleep) {
+    return;
+  }
+
   const uint32_t now = millis();
   if (now - last_critical_battery_check < HELTEC_V4_BATTERY_CHECK_INTERVAL_MSEC) {
     return;
@@ -336,6 +340,20 @@ void HeltecV4Board::onAfterTransmit()
   digitalWrite(P_LORA_TX_LED, LOW);
 #endif
   loRaFEMControl.setRxModeEnable();
+}
+
+bool HeltecV4Board::startOTAUpdate(const char *id, char reply[])
+{
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+  const uint16_t battery_millivolts = readBatteryMilliVoltsRaw();
+  if (battery_millivolts < HELTEC_V4_BATTERY_RECOVERY_MILLIVOLTS) {
+    sprintf(reply, "Error: battery %umV; OTA requires at least %umV",
+            static_cast<unsigned>(battery_millivolts),
+            static_cast<unsigned>(HELTEC_V4_BATTERY_RECOVERY_MILLIVOLTS));
+    return false;
+  }
+#endif
+  return ESP32Board::startOTAUpdate(id, reply);
 }
 
 void HeltecV4Board::powerOff()

@@ -43,6 +43,7 @@ public:
   void loop() override;
   void attachDynamicPrefs(KeyValueStore *prefs);
   bool handleCommand(const char *command, uint32_t sender_timestamp, char *reply) override;
+  bool startOTAUpdate(const char *id, char reply[]) override;
 
   void onBeforeTransmit() override;
   void onAfterTransmit() override;
