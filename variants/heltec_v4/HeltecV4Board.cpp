@@ -340,6 +340,7 @@ void HeltecV4Board::onAfterTransmit()
 
 void HeltecV4Board::powerOff()
 {
+  persistent_writes_allowed = false;
   heltecV4CriticalPreSleep();
   loRaFEMControl.setSleepModeEnable();
 #ifdef PIN_OLED_RESET
@@ -355,11 +356,18 @@ void HeltecV4Board::powerOff()
 #ifdef P_LORA_TX_LED
   configureAndHoldPin(P_LORA_TX_LED, LOW);
 #endif
+  configureAndHoldPin(P_LORA_NSS, HIGH);
+  configureAndHoldPin(P_LORA_KCT8103L_PA_CTX, HIGH);
   configureAndHoldPin(P_LORA_GC1109_PA_TX_EN, LOW);
   configureAndHoldPin(P_LORA_GC1109_PA_EN, LOW);
   configureAndHoldPin(P_LORA_PA_POWER, LOW);
   gpio_deep_sleep_hold_en();
-  ESP32Board::powerOff();
+
+  Serial.flush();
+  delay(20);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+  esp_deep_sleep_start();
 }
 
 uint16_t HeltecV4Board::getBattMilliVolts()
@@ -426,6 +434,9 @@ bool HeltecV4Board::isLoRaFemLnaEnabled() const
 void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)
 {
   _prefs = prefs;
+  if (_prefs && loRaFEMControl.isLnaCanControl()) {
+    _prefs->setByKey("fem_rxgain", isLoRaFemLnaEnabled() ? "1" : "0");
+  }
 }
 
 bool HeltecV4Board::handleCommand(const char *command, uint32_t sender_timestamp, char *reply)
