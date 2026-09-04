@@ -22,7 +22,7 @@ class HeltecV4Board : public ESP32Board {
   uint32_t last_battery_percent_change = 0;
   uint32_t last_critical_battery_check = 0;
   uint8_t critical_low_readings = 0;
-  int8_t last_requested_output_dbm = 0;
+  int8_t last_requested_radio_dbm = 0;
   int8_t last_radio_input_dbm = 0;
 
   uint16_t readBatteryMilliVoltsRaw();
@@ -49,7 +49,7 @@ public:
   void powerOff() override;
   uint16_t getBattMilliVolts() override;
   int8_t getBattPercent() override;
-  int8_t mapRadioTxPower(int8_t requested_output_dbm) override;
+  int8_t mapRadioTxPower(int8_t requested_radio_dbm) override;
 
   bool setAdcMultiplier(float multiplier) override
   {

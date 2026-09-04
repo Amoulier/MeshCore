@@ -89,8 +89,8 @@ bool radio_init()
   const bool initialized = radio.std_init();
 #endif
   if (initialized) {
-    // LORA_TX_POWER is the desired antenna output. The board maps it to the
-    // safe SX1262 input required by the detected GC1109 or KCT8103L FEM.
+    // Preserve MeshCore's existing SX1262-input setting. The board applies a
+    // FEM-aware ceiling so estimated antenna output stays within 22 dBm.
     radio_driver.setTxPower(LORA_TX_POWER);
   }
   return initialized;

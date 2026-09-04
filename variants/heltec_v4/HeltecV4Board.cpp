@@ -354,19 +354,23 @@ int8_t HeltecV4Board::getBattPercent()
   return static_cast<int8_t>(reported_battery_percent);
 }
 
-int8_t HeltecV4Board::mapRadioTxPower(int8_t requested_output_dbm)
+int8_t HeltecV4Board::mapRadioTxPower(int8_t requested_radio_dbm)
 {
-  if (requested_output_dbm > HELTEC_V4_MAX_OUTPUT_POWER_DBM) {
-    requested_output_dbm = HELTEC_V4_MAX_OUTPUT_POWER_DBM;
+  if (requested_radio_dbm < -9) {
+    requested_radio_dbm = -9;
+  } else if (requested_radio_dbm > 22) {
+    requested_radio_dbm = 22;
   }
 
-  last_requested_output_dbm = requested_output_dbm;
+  last_requested_radio_dbm = requested_radio_dbm;
   if (loRaFEMControl.getFEMType() == GC1109_PA) {
-    last_radio_input_dbm = heltec_v4::gc1109RadioInputPower(requested_output_dbm);
+    last_radio_input_dbm = heltec_v4::clampGc1109RadioInput(
+        requested_radio_dbm, HELTEC_V4_MAX_OUTPUT_POWER_DBM);
   } else if (loRaFEMControl.getFEMType() == KCT8103L_PA) {
-    last_radio_input_dbm = heltec_v4::kct8103lRadioInputPower(requested_output_dbm);
+    last_radio_input_dbm = heltec_v4::clampKct8103lRadioInput(
+        requested_radio_dbm, HELTEC_V4_MAX_OUTPUT_POWER_DBM);
   } else {
-    last_radio_input_dbm = requested_output_dbm;
+    last_radio_input_dbm = requested_radio_dbm;
   }
   return last_radio_input_dbm;
 }
@@ -448,7 +452,13 @@ bool HeltecV4Board::handleCommand(const char *command, uint32_t sender_timestamp
   }
 
   if (strcmp(command, "get radio.power") == 0) {
-    sprintf(reply, "> requested:%ddBm,radio:%ddBm", last_requested_output_dbm, last_radio_input_dbm);
+    const int8_t estimated_output_dbm = loRaFEMControl.getFEMType() == GC1109_PA
+        ? heltec_v4::gc1109EstimatedOutput(last_radio_input_dbm)
+        : (loRaFEMControl.getFEMType() == KCT8103L_PA
+             ? heltec_v4::kct8103lEstimatedOutput(last_radio_input_dbm)
+             : last_radio_input_dbm);
+    sprintf(reply, "> requested-radio:%ddBm,applied-radio:%ddBm,estimated-output:%ddBm",
+            last_requested_radio_dbm, last_radio_input_dbm, estimated_output_dbm);
     return true;
   }
 
