@@ -1,0 +1,61 @@
+name: Apply final Heltec V4 audit cleanups
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-power-parity
+    paths:
+      - .github/workflows/apply-final-cleanups.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/heltec-v4-power-parity
+          fetch-depth: 0
+
+      - name: Avoid dirtying legacy prefs during an unchanged NVS sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("variants/heltec_v4/HeltecV4Board.cpp")
+          text = path.read_text(encoding="utf-8")
+          old = '''  if (fem_lna_nvs_explicit) {
+            // Once migrated, NVS is authoritative and keeps the JSON preference
+            // aligned for clients that still inspect the legacy field.
+            _prefs->setByKey("fem_rxgain", isLoRaFemLnaEnabled() ? "1" : "0");
+            return;
+          }
+          '''
+          new = '''  if (fem_lna_nvs_explicit) {
+            // Once migrated, NVS is authoritative. Only touch the legacy JSON
+            // field when it actually differs, avoiding an unnecessary flash save.
+            const char *desired_fem_rxgain = isLoRaFemLnaEnabled() ? "1" : "0";
+            char stored_fem_rxgain[8] = {};
+            if (!_prefs->getByKey("fem_rxgain", stored_fem_rxgain, sizeof(stored_fem_rxgain)) ||
+                strcmp(stored_fem_rxgain, desired_fem_rxgain) != 0) {
+              _prefs->setByKey("fem_rxgain", desired_fem_rxgain);
+            }
+            return;
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("Expected NVS-authoritative FEM block was not found exactly once")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+
+          rm .github/workflows/apply-final-cleanups.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add variants/heltec_v4/HeltecV4Board.cpp .github/workflows/apply-final-cleanups.yml
+          git commit -m "fix(heltec-v4): avoid redundant LNA preference writes"
+          git push origin HEAD:feature/heltec-v4-power-parity
