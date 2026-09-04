@@ -144,4 +144,62 @@ inline int8_t kct8103lRadioInputPower(int8_t requested_output_dbm)
   return radioInputPowerForRequestedOutput(requested_output_dbm, KCT8103L_TX_GAIN_DB);
 }
 
+inline int8_t estimatedOutputPowerForRadioInput(int8_t radio_input_dbm,
+                                                const uint8_t (&gain_table)[22])
+{
+  int8_t table_index = radio_input_dbm;
+  if (table_index < 0) {
+    table_index = 0;
+  } else if (table_index > 21) {
+    table_index = 21;
+  }
+  return static_cast<int8_t>(radio_input_dbm + gain_table[table_index]);
+}
+
+inline int8_t maximumRadioInputForOutputLimit(int8_t output_limit_dbm,
+                                              const uint8_t (&gain_table)[22])
+{
+  int8_t maximum_safe_input = -9;
+  for (int8_t radio_input = -9; radio_input <= 22; radio_input++) {
+    if (estimatedOutputPowerForRadioInput(radio_input, gain_table) <= output_limit_dbm) {
+      maximum_safe_input = radio_input;
+    }
+  }
+  return maximum_safe_input;
+}
+
+inline int8_t clampRadioInputForOutputLimit(int8_t requested_radio_dbm,
+                                            int8_t output_limit_dbm,
+                                            const uint8_t (&gain_table)[22])
+{
+  if (requested_radio_dbm < -9) {
+    requested_radio_dbm = -9;
+  } else if (requested_radio_dbm > 22) {
+    requested_radio_dbm = 22;
+  }
+
+  const int8_t maximum_safe_input = maximumRadioInputForOutputLimit(output_limit_dbm, gain_table);
+  return requested_radio_dbm > maximum_safe_input ? maximum_safe_input : requested_radio_dbm;
+}
+
+inline int8_t gc1109EstimatedOutput(int8_t radio_input_dbm)
+{
+  return estimatedOutputPowerForRadioInput(radio_input_dbm, GC1109_TX_GAIN_DB);
+}
+
+inline int8_t kct8103lEstimatedOutput(int8_t radio_input_dbm)
+{
+  return estimatedOutputPowerForRadioInput(radio_input_dbm, KCT8103L_TX_GAIN_DB);
+}
+
+inline int8_t clampGc1109RadioInput(int8_t requested_radio_dbm, int8_t output_limit_dbm)
+{
+  return clampRadioInputForOutputLimit(requested_radio_dbm, output_limit_dbm, GC1109_TX_GAIN_DB);
+}
+
+inline int8_t clampKct8103lRadioInput(int8_t requested_radio_dbm, int8_t output_limit_dbm)
+{
+  return clampRadioInputForOutputLimit(requested_radio_dbm, output_limit_dbm, KCT8103L_TX_GAIN_DB);
+}
+
 } // namespace heltec_v4
