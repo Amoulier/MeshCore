@@ -29,173 +29,114 @@ jobs:
 
           identity_path = Path("src/helpers/IdentityStore.cpp")
           identity = identity_path.read_text(encoding="utf-8")
-          old_identity = '''  mesh::LocalIdentity verified;
-          if (!loadIdentityFile(fs, temporary_path, verified) || !verified.matches(id) ||
-              !meshcorePersistentWritesAllowed()) {
-            fs->remove(temporary_path);
-            return false;
-          }
-          '''
-          new_identity = '''  mesh::LocalIdentity verified;
-          bool key_pair_verified = loadIdentityFile(fs, temporary_path, verified) && verified.matches(id);
-          if (key_pair_verified) {
-            static const uint8_t verification_message[] = {
-              'M', 'e', 's', 'h', 'C', 'o', 'r', 'e', '-', 'i', 'd', 'e', 'n', 't', 'i', 't', 'y'
-            };
-            uint8_t verification_signature[SIGNATURE_SIZE] = {};
-            verified.sign(verification_signature, verification_message, sizeof(verification_message));
-            key_pair_verified = verified.verify(verification_signature, verification_message,
-                                                sizeof(verification_message));
-          }
-          if (!key_pair_verified || !meshcorePersistentWritesAllowed()) {
-            fs->remove(temporary_path);
-            return false;
-          }
-          '''
-          if identity.count(old_identity) != 1:
-              raise SystemExit("Expected identity verification block was not found exactly once")
-          identity_path.write_text(identity.replace(old_identity, new_identity), encoding="utf-8")
+          identity_start = identity.index("  mesh::LocalIdentity verified;\n")
+          identity_end = identity.index("\n\n  fs->remove(backup_path);", identity_start)
+          identity_replacement = (
+              "  mesh::LocalIdentity verified;\n"
+              "  bool key_pair_verified = loadIdentityFile(fs, temporary_path, verified) && verified.matches(id);\n"
+              "  if (key_pair_verified) {\n"
+              "    static const uint8_t verification_message[] = {\n"
+              "      'M', 'e', 's', 'h', 'C', 'o', 'r', 'e', '-', 'i', 'd', 'e', 'n', 't', 'i', 't', 'y'\n"
+              "    };\n"
+              "    uint8_t verification_signature[SIGNATURE_SIZE] = {};\n"
+              "    verified.sign(verification_signature, verification_message, sizeof(verification_message));\n"
+              "    key_pair_verified = verified.verify(verification_signature, verification_message,\n"
+              "                                        sizeof(verification_message));\n"
+              "  }\n"
+              "  if (!key_pair_verified || !meshcorePersistentWritesAllowed()) {\n"
+              "    fs->remove(temporary_path);\n"
+              "    return false;\n"
+              "  }"
+          )
+          identity = identity[:identity_start] + identity_replacement + identity[identity_end:]
+          identity_path.write_text(identity, encoding="utf-8")
 
           board_path = Path("variants/heltec_v4/HeltecV4Board.cpp")
           board = board_path.read_text(encoding="utf-8")
 
-          old_state = '''RTC_DATA_ATTR bool battery_critical_latched = false;
-          volatile bool persistent_writes_allowed = true;
-          '''
-          new_state = '''RTC_DATA_ATTR bool battery_critical_latched = false;
-          volatile bool persistent_writes_allowed = true;
-          bool fem_lna_nvs_explicit = false;
-          '''
+          old_state = "RTC_DATA_ATTR bool battery_critical_latched = false;\nvolatile bool persistent_writes_allowed = true;\n"
+          new_state = old_state + "bool fem_lna_nvs_explicit = false;\n"
           if board.count(old_state) != 1:
               raise SystemExit("Expected board state block was not found exactly once")
           board = board.replace(old_state, new_state)
 
-          old_helper_anchor = '''heltec_v4::PowerProfile configuredPowerProfile()
-          {
-          #if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
-            return heltec_v4::PowerProfile::SolarRepeater;
-          #else
-            return heltec_v4::PowerProfile::Standard;
-          #endif
-          }
+          namespace_marker = "\n} // namespace\n\nbool meshcorePersistentWritesAllowed()"
+          if board.count(namespace_marker) != 1:
+              raise SystemExit("Expected anonymous-namespace marker was not found exactly once")
+          helper = (
+              "\nbool persistFemLnaPreference(bool enabled)\n"
+              "{\n"
+              "  if (!meshcorePersistentWritesAllowed()) {\n"
+              "    return false;\n"
+              "  }\n\n"
+              "  Preferences preferences;\n"
+              "  if (!preferences.begin(BOARD_PREFS_NAMESPACE, false)) {\n"
+              "    return false;\n"
+              "  }\n"
+              "  // The explicit marker is the commit record: write the value first so\n"
+              "  // an interrupted migration is retried rather than accepting a default.\n"
+              "  const bool value_written = preferences.putBool(FEM_LNA_ENABLED_KEY, enabled) == sizeof(bool);\n"
+              "  const bool marker_written = value_written &&\n"
+              "                              preferences.putBool(FEM_LNA_EXPLICIT_KEY, true) == sizeof(bool);\n"
+              "  preferences.end();\n"
+              "  return marker_written;\n"
+              "}\n"
+          )
+          board = board.replace(namespace_marker, helper + namespace_marker)
 
-          } // namespace
-          '''
-          new_helper_anchor = '''heltec_v4::PowerProfile configuredPowerProfile()
-          {
-          #if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
-            return heltec_v4::PowerProfile::SolarRepeater;
-          #else
-            return heltec_v4::PowerProfile::Standard;
-          #endif
-          }
+          begin_start = board.index("  loRaFEMControl.init();\n")
+          begin_end = board.index("\n\n  periph_power.begin();", begin_start)
+          begin_replacement = (
+              "  loRaFEMControl.init();\n"
+              "  bool enable_lna = true;\n"
+              "  fem_lna_nvs_explicit = false;\n"
+              "  Preferences preferences;\n"
+              "  if (preferences.begin(BOARD_PREFS_NAMESPACE, true)) {\n"
+              "    fem_lna_nvs_explicit = preferences.getBool(FEM_LNA_EXPLICIT_KEY, false);\n"
+              "    if (fem_lna_nvs_explicit) {\n"
+              "      enable_lna = preferences.getBool(FEM_LNA_ENABLED_KEY, true);\n"
+              "    }\n"
+              "    preferences.end();\n"
+              "  }\n"
+              "  setLoRaFemLnaEnabled(enable_lna);"
+          )
+          board = board[:begin_start] + begin_replacement + board[begin_end:]
 
-          bool persistFemLnaPreference(bool enabled)
-          {
-            if (!meshcorePersistentWritesAllowed()) {
-              return false;
-            }
+          attach_start = board.index("void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)\n")
+          attach_end = board.index("\nbool HeltecV4Board::handleCommand", attach_start)
+          attach_replacement = (
+              "void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)\n"
+              "{\n"
+              "  _prefs = prefs;\n"
+              "  if (!_prefs || !loRaFEMControl.isLnaCanControl()) {\n"
+              "    return;\n"
+              "  }\n\n"
+              "  if (fem_lna_nvs_explicit) {\n"
+              "    // Once migrated, NVS is authoritative and keeps the JSON preference\n"
+              "    // aligned for clients that still inspect the legacy field.\n"
+              "    _prefs->setByKey(\"fem_rxgain\", isLoRaFemLnaEnabled() ? \"1\" : \"0\");\n"
+              "    return;\n"
+              "  }\n\n"
+              "  char legacy_fem_rxgain[8] = {};\n"
+              "  if (!_prefs->getByKey(\"fem_rxgain\", legacy_fem_rxgain, sizeof(legacy_fem_rxgain))) {\n"
+              "    return;\n"
+              "  }\n\n"
+              "  // Fresh installs default this field to 1; upgraded installations can\n"
+              "  // carry an explicit 0. Apply it before creating the new NVS marker.\n"
+              "  const bool enable_lna = strcmp(legacy_fem_rxgain, \"1\") == 0;\n"
+              "  setLoRaFemLnaEnabled(enable_lna);\n"
+              "  fem_lna_nvs_explicit = persistFemLnaPreference(enable_lna);\n"
+              "}\n"
+          )
+          board = board[:attach_start] + attach_replacement + board[attach_end:]
 
-            Preferences preferences;
-            if (!preferences.begin(BOARD_PREFS_NAMESPACE, false)) {
-              return false;
-            }
-            // The explicit marker is the commit record: write the value first so
-            // an interrupted migration is retried rather than accepting a default.
-            const bool value_written = preferences.putBool(FEM_LNA_ENABLED_KEY, enabled) == sizeof(bool);
-            const bool marker_written = value_written &&
-                                        preferences.putBool(FEM_LNA_EXPLICIT_KEY, true) == sizeof(bool);
-            preferences.end();
-            return marker_written;
-          }
-
-          } // namespace
-          '''
-          if board.count(old_helper_anchor) != 1:
-              raise SystemExit("Expected power-profile helper anchor was not found exactly once")
-          board = board.replace(old_helper_anchor, new_helper_anchor)
-
-          old_begin = '''  loRaFEMControl.init();
-            bool enable_lna = true;
-            Preferences preferences;
-            if (preferences.begin(BOARD_PREFS_NAMESPACE, true)) {
-              if (preferences.getBool(FEM_LNA_EXPLICIT_KEY, false)) {
-                enable_lna = preferences.getBool(FEM_LNA_ENABLED_KEY, true);
-              }
-              preferences.end();
-            }
-            setLoRaFemLnaEnabled(enable_lna);
-          '''
-          new_begin = '''  loRaFEMControl.init();
-            bool enable_lna = true;
-            fem_lna_nvs_explicit = false;
-            Preferences preferences;
-            if (preferences.begin(BOARD_PREFS_NAMESPACE, true)) {
-              fem_lna_nvs_explicit = preferences.getBool(FEM_LNA_EXPLICIT_KEY, false);
-              if (fem_lna_nvs_explicit) {
-                enable_lna = preferences.getBool(FEM_LNA_ENABLED_KEY, true);
-              }
-              preferences.end();
-            }
-            setLoRaFemLnaEnabled(enable_lna);
-          '''
-          if board.count(old_begin) != 1:
-              raise SystemExit("Expected FEM initialization block was not found exactly once")
-          board = board.replace(old_begin, new_begin)
-
-          old_attach = '''void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)
-          {
-            _prefs = prefs;
-            if (_prefs && loRaFEMControl.isLnaCanControl()) {
-              _prefs->setByKey("fem_rxgain", isLoRaFemLnaEnabled() ? "1" : "0");
-            }
-          }
-          '''
-          new_attach = '''void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)
-          {
-            _prefs = prefs;
-            if (!_prefs || !loRaFEMControl.isLnaCanControl()) {
-              return;
-            }
-
-            if (fem_lna_nvs_explicit) {
-              // Once migrated, NVS is authoritative and keeps the JSON preference
-              // aligned for clients that still inspect the legacy field.
-              _prefs->setByKey("fem_rxgain", isLoRaFemLnaEnabled() ? "1" : "0");
-              return;
-            }
-
-            char legacy_fem_rxgain[8] = {};
-            if (!_prefs->getByKey("fem_rxgain", legacy_fem_rxgain, sizeof(legacy_fem_rxgain))) {
-              return;
-            }
-
-            // Fresh installs default this field to 1; upgraded installations can
-            // carry an explicit 0. Apply it before creating the new NVS marker.
-            const bool enable_lna = strcmp(legacy_fem_rxgain, "1") == 0;
-            setLoRaFemLnaEnabled(enable_lna);
-            fem_lna_nvs_explicit = persistFemLnaPreference(enable_lna);
-          }
-          '''
-          if board.count(old_attach) != 1:
-              raise SystemExit("Expected attachDynamicPrefs block was not found exactly once")
-          board = board.replace(old_attach, new_attach)
-
-          old_cli = '''    if (meshcorePersistentWritesAllowed()) {
-              Preferences preferences;
-              if (preferences.begin(BOARD_PREFS_NAMESPACE, false)) {
-                preferences.putBool(FEM_LNA_EXPLICIT_KEY, true);
-                preferences.putBool(FEM_LNA_ENABLED_KEY, enable);
-                preferences.end();
-              }
-            }
-          '''
-          new_cli = '''    fem_lna_nvs_explicit = persistFemLnaPreference(enable) || fem_lna_nvs_explicit;
-          '''
-          if board.count(old_cli) != 1:
-              raise SystemExit("Expected CLI NVS persistence block was not found exactly once")
-          board = board.replace(old_cli, new_cli)
-
+          command_start = board.index("  if (memcmp(command, \"set radio.fem.rxgain \", 21) == 0) {\n")
+          persistence_start = board.index("    if (meshcorePersistentWritesAllowed()) {\n", command_start)
+          persistence_end = board.index("\n    strcpy(reply", persistence_start)
+          persistence_replacement = (
+              "    fem_lna_nvs_explicit = persistFemLnaPreference(enable) || fem_lna_nvs_explicit;"
+          )
+          board = board[:persistence_start] + persistence_replacement + board[persistence_end:]
           board_path.write_text(board, encoding="utf-8")
           PY
 
