@@ -1,0 +1,124 @@
+name: Heltec V4 Validation Release
+
+on:
+  push:
+    tags:
+      - "heltec-v4-validation-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Package ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - heltec_v4_repeater
+          - heltec_v4_solar_repeater
+          - heltec_v4_expansionkit_repeater
+          - heltec_v4_repeater_bridge_espnow
+          - heltec_v4_room_server
+          - heltec_v4_terminal_chat
+          - heltec_v4_companion_radio_usb
+          - heltec_v4_companion_radio_ble
+          - heltec_v4_companion_radio_wifi
+          - heltec_v4_sensor
+          - heltec_v4_kiss_modem
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Build OTA and merged images
+        shell: bash
+        env:
+          TARGET: ${{ matrix.environment }}
+        run: |
+          set -euo pipefail
+          short_sha="$(git rev-parse --short=8 HEAD)"
+          build_date="$(date -u '+%d-%b-%Y')"
+          release_version="${GITHUB_REF_NAME}"
+          firmware_version="${release_version#heltec-v4-validation-}-${short_sha}"
+          package_version="${release_version}-${short_sha}"
+          export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS:-} -DFIRMWARE_BUILD_DATE='\"${build_date}\"' -DFIRMWARE_VERSION='\"${firmware_version}\"'"
+
+          pio run -e "${TARGET}"
+          pio run -e "${TARGET}" -t mergebin
+
+          mkdir -p out
+          base="${TARGET}-${package_version}"
+          cp ".pio/build/${TARGET}/firmware.bin" "out/${base}.bin"
+          cp ".pio/build/${TARGET}/firmware-merged.bin" "out/${base}-merged.bin"
+
+          (
+            cd out
+            sha256sum "${base}.bin" "${base}-merged.bin" > "${base}.sha256"
+          )
+
+          cat > "out/${base}.txt" <<EOF
+          Target: ${TARGET}
+          Release: ${release_version}
+          Firmware version: ${firmware_version}
+          Commit: $(git rev-parse HEAD)
+          Build date (UTC): ${build_date}
+
+          ${base}.bin
+            Application image for a compatible MeshCore OTA/update path.
+
+          ${base}-merged.bin
+            Complete fresh-install image. Flash at address 0x0 on ESP32-S3.
+
+          This is validation firmware. Confirm hardware revision, antenna,
+          regional radio settings and the target profile before installation.
+          The solar target must be validated with the final cell, charger and
+          panel before unattended deployment.
+          EOF
+
+      - name: Upload packaged target
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.environment }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: Publish validation prerelease
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all target packages
+        uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+          path: out
+
+      - name: Publish prerelease
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Heltec V4 validation ${{ github.ref_name }}"
+          prerelease: true
+          draft: false
+          fail_on_unmatched_files: true
+          body: |
+            Validation build for the Heltec WiFi LoRa 32 V4 OLED-only fork.
+
+            Included targets cover Companion BLE/USB/Wi-Fi, standard and solar
+            repeaters, expansion-kit repeater, ESP-NOW bridge, room server,
+            terminal chat, sensor and KISS modem.
+
+            Important:
+            - This is a prerelease, not a stable hardware-qualified release.
+            - The unmerged `.bin` is the application/OTA image.
+            - The `-merged.bin` image is for a fresh ESP32-S3 flash at address 0x0.
+            - Verify RF output, current consumption, BLE reconnection, OLED/GPS
+              power behavior and the 3.50 V / 3.65 V solar recovery cycle on the
+              final hardware before unattended deployment.
+            - Replace example passwords and Wi-Fi credentials before use.
+          files: out/*

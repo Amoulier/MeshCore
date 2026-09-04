@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include "DataStore.h"
 
+#include <helpers/PersistentWriteGuard.h>
+#include <stdio.h>
+
 #if defined(EXTRAFS) || defined(QSPIFLASH)
   #define MAX_BLOBRECS 100
 #else
@@ -32,6 +35,9 @@ DataStore::DataStore(FILESYSTEM& fs, FILESYSTEM& fsExtra, mesh::RTCClock& clock)
 #endif
 
 static File openWrite(FILESYSTEM* fs, const char* filename) {
+  if (!meshcorePersistentWritesAllowed()) {
+    return File();
+  }
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   fs->remove(filename);
   return fs->open(filename, FILE_O_WRITE);
@@ -40,6 +46,45 @@ static File openWrite(FILESYSTEM* fs, const char* filename) {
 #else
   return fs->open(filename, "w", true);
 #endif
+}
+
+static void makeSidecarPath(char* dest, size_t dest_size, const char* filename, const char* suffix) {
+  snprintf(dest, dest_size, "%s%s", filename, suffix);
+}
+
+static bool commitTemporaryFile(FILESYSTEM* fs, const char* filename, const char* temporary_filename) {
+  if (!meshcorePersistentWritesAllowed()) {
+    fs->remove(temporary_filename);
+    return false;
+  }
+
+  char backup_filename[96];
+  makeSidecarPath(backup_filename, sizeof(backup_filename), filename, ".bak");
+  fs->remove(backup_filename);
+
+  const bool had_primary = fs->exists(filename);
+  if (had_primary && !fs->rename(filename, backup_filename)) {
+    fs->remove(temporary_filename);
+    return false;
+  }
+
+  if (!fs->rename(temporary_filename, filename)) {
+    if (had_primary) {
+      fs->rename(backup_filename, filename);
+    }
+    fs->remove(temporary_filename);
+    return false;
+  }
+
+  return true;
+}
+
+static const char* readablePath(FILESYSTEM* fs, const char* filename, char* backup_filename, size_t backup_size) {
+  if (fs->exists(filename)) {
+    return filename;
+  }
+  makeSidecarPath(backup_filename, backup_size, filename, ".bak");
+  return fs->exists(backup_filename) ? backup_filename : filename;
 }
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -73,7 +118,7 @@ void DataStore::begin() {
     #include <CustomLFS_QSPIFlash.h>
   #elif defined(EXTRAFS)
     #include <CustomLFS.h>
-  #else 
+  #else
     #include <InternalFileSystem.h>
   #endif
 #endif
@@ -155,15 +200,39 @@ File DataStore::openRead(FILESYSTEM* fs, const char* filename) {
 #endif
 }
 
-bool DataStore::removeFile(const char* filename) {
-  return _fs->remove(filename);
-}
+static bool removeFileAndSidecars(FILESYSTEM* fs, const char* filename) {
+  if (!meshcorePersistentWritesAllowed()) {
+    return false;
+  }
 
-bool DataStore::removeFile(FILESYSTEM* fs, const char* filename) {
+  char temporary_filename[96];
+  char backup_filename[96];
+  makeSidecarPath(temporary_filename, sizeof(temporary_filename), filename, ".tmp");
+  makeSidecarPath(backup_filename, sizeof(backup_filename), filename, ".bak");
+
+  // Remove recovery copies first. If either removal fails, keep the
+  // primary intact rather than report a deletion that can resurrect.
+  if (fs->exists(temporary_filename) && !fs->remove(temporary_filename)) {
+    return false;
+  }
+  if (fs->exists(backup_filename) && !fs->remove(backup_filename)) {
+    return false;
+  }
   return fs->remove(filename);
 }
 
+bool DataStore::removeFile(const char* filename) {
+  return removeFileAndSidecars(_fs, filename);
+}
+
+bool DataStore::removeFile(FILESYSTEM* fs, const char* filename) {
+  return removeFileAndSidecars(fs, filename);
+}
+
 bool DataStore::formatFileSystem() {
+  if (!meshcorePersistentWritesAllowed()) {
+    return false;
+  }
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   if (_fsExtra == nullptr) {
     return _fs->format();
@@ -190,17 +259,17 @@ bool DataStore::saveMainIdentity(const mesh::LocalIdentity &identity) {
 }
 
 void DataStore::loadPrefs(NodePrefs& prefs) {
-  if (_fs->exists("/prefs.json")) {
-    File file = openRead(_fs, "/prefs.json");
+  char backup_filename[96];
+  const char* filename = readablePath(_fs, "/prefs.json", backup_filename, sizeof(backup_filename));
+  if (_fs->exists(filename)) {
+    File file = openRead(_fs, filename);
     if (file) {
-      prefs.loadSerial(file);   // new Serial prefs
+      prefs.loadSerial(file);
       file.close();
     }
   } else if (_fs->exists("/new_prefs")) {
     loadPrefsInt("/new_prefs", prefs);
-    if (savePrefs(prefs) ) {                // save to new format
-      //_fs->remove("/new_prefs"); // remove old
-    }
+    savePrefs(prefs);
   }
 }
 
@@ -237,131 +306,159 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs) {
     file.read((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 88
     file.read((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 89
     file.read((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 90
-    file.read((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));     // 121
+    file.read((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));      // 121
 
-    // migrate old fields
     _prefs.setRepeatEn(_prefs._client_repeat != 0);
-
     file.close();
   }
 }
 
 bool DataStore::savePrefs(NodePrefs& _prefs) {
-  File file = openWrite(_fs, "/prefs.json");
-  if (file) {
-    bool success = _prefs.saveSerial(file);
-    file.close();
-    return success;
+  const char* temporary_filename = "/prefs.json.tmp";
+  File file = openWrite(_fs, temporary_filename);
+  if (!file) {
+    return false;
   }
-  return false;
+
+  const bool success = _prefs.saveSerial(file);
+  file.flush();
+  file.close();
+  if (!success) {
+    _fs->remove(temporary_filename);
+    return false;
+  }
+  return commitTemporaryFile(_fs, "/prefs.json", temporary_filename);
 }
 
 void DataStore::loadContacts(DataStoreHost* host) {
-File file = openRead(_getContactsChannelsFS(), "/contacts3");
-    if (file) {
-      bool full = false;
-      while (!full) {
-        ContactInfo c;
-        uint8_t pub_key[32];
-        uint8_t unused;
+  FILESYSTEM* fs = _getContactsChannelsFS();
+  char backup_filename[96];
+  const char* filename = readablePath(fs, "/contacts3", backup_filename, sizeof(backup_filename));
+  File file = openRead(fs, filename);
+  if (file) {
+    bool full = false;
+    while (!full) {
+      ContactInfo c;
+      uint8_t pub_key[32];
+      uint8_t unused;
 
-        bool success = (file.read(pub_key, 32) == 32);
-        success = success && (file.read((uint8_t *)&c.name, 32) == 32);
-        success = success && (file.read(&c.type, 1) == 1);
-        success = success && (file.read(&c.flags, 1) == 1);
-        success = success && (file.read(&unused, 1) == 1);
-        success = success && (file.read((uint8_t *)&c.sync_since, 4) == 4); // was 'reserved'
-        success = success && (file.read((uint8_t *)&c.out_path_len, 1) == 1);
-        success = success && (file.read((uint8_t *)&c.last_advert_timestamp, 4) == 4);
-        success = success && (file.read(c.out_path, 64) == 64);
-        success = success && (file.read((uint8_t *)&c.lastmod, 4) == 4);
-        success = success && (file.read((uint8_t *)&c.gps_lat, 4) == 4);
-        success = success && (file.read((uint8_t *)&c.gps_lon, 4) == 4);
+      bool success = (file.read(pub_key, 32) == 32);
+      success = success && (file.read((uint8_t *)&c.name, 32) == 32);
+      success = success && (file.read(&c.type, 1) == 1);
+      success = success && (file.read(&c.flags, 1) == 1);
+      success = success && (file.read(&unused, 1) == 1);
+      success = success && (file.read((uint8_t *)&c.sync_since, 4) == 4);
+      success = success && (file.read((uint8_t *)&c.out_path_len, 1) == 1);
+      success = success && (file.read((uint8_t *)&c.last_advert_timestamp, 4) == 4);
+      success = success && (file.read(c.out_path, 64) == 64);
+      success = success && (file.read((uint8_t *)&c.lastmod, 4) == 4);
+      success = success && (file.read((uint8_t *)&c.gps_lat, 4) == 4);
+      success = success && (file.read((uint8_t *)&c.gps_lon, 4) == 4);
 
-        if (!success) break; // EOF
+      if (!success) break;
 
-        c.id = mesh::Identity(pub_key);
-        if (!host->onContactLoaded(c)) full = true;
-      }
-      file.close();
+      c.id = mesh::Identity(pub_key);
+      if (!host->onContactLoaded(c)) full = true;
     }
+    file.close();
+  }
 }
 
 void DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactInfo& c)) {
-  File file = openWrite(_getContactsChannelsFS(), "/contacts3");
-  if (file) {
-    uint32_t idx = 0;
-    ContactInfo c;
-    uint8_t unused = 0;
+  FILESYSTEM* fs = _getContactsChannelsFS();
+  const char* temporary_filename = "/contacts3.tmp";
+  File file = openWrite(fs, temporary_filename);
+  if (!file) {
+    return;
+  }
 
-    while (host->getContactForSave(idx, c)) {
-      if (filter && !filter(c)) {
-        idx++;  // advance to next contact
-        continue;
-      }
-      bool success = (file.write(c.id.pub_key, 32) == 32);
-      success = success && (file.write((uint8_t *)&c.name, 32) == 32);
-      success = success && (file.write(&c.type, 1) == 1);
-      success = success && (file.write(&c.flags, 1) == 1);
-      success = success && (file.write(&unused, 1) == 1);
-      success = success && (file.write((uint8_t *)&c.sync_since, 4) == 4);
-      success = success && (file.write((uint8_t *)&c.out_path_len, 1) == 1);
-      success = success && (file.write((uint8_t *)&c.last_advert_timestamp, 4) == 4);
-      success = success && (file.write(c.out_path, 64) == 64);
-      success = success && (file.write((uint8_t *)&c.lastmod, 4) == 4);
-      success = success && (file.write((uint8_t *)&c.gps_lat, 4) == 4);
-      success = success && (file.write((uint8_t *)&c.gps_lon, 4) == 4);
+  bool success = true;
+  uint32_t idx = 0;
+  ContactInfo c;
+  uint8_t unused = 0;
 
-      if (!success) break; // write failed
-
-      idx++;  // advance to next contact
+  while (host->getContactForSave(idx, c)) {
+    if (filter && !filter(c)) {
+      idx++;
+      continue;
     }
-    file.close();
+    success = (file.write(c.id.pub_key, 32) == 32);
+    success = success && (file.write((uint8_t *)&c.name, 32) == 32);
+    success = success && (file.write(&c.type, 1) == 1);
+    success = success && (file.write(&c.flags, 1) == 1);
+    success = success && (file.write(&unused, 1) == 1);
+    success = success && (file.write((uint8_t *)&c.sync_since, 4) == 4);
+    success = success && (file.write((uint8_t *)&c.out_path_len, 1) == 1);
+    success = success && (file.write((uint8_t *)&c.last_advert_timestamp, 4) == 4);
+    success = success && (file.write(c.out_path, 64) == 64);
+    success = success && (file.write((uint8_t *)&c.lastmod, 4) == 4);
+    success = success && (file.write((uint8_t *)&c.gps_lat, 4) == 4);
+    success = success && (file.write((uint8_t *)&c.gps_lon, 4) == 4);
+
+    if (!success) break;
+    idx++;
+  }
+
+  file.flush();
+  file.close();
+  if (!success || !commitTemporaryFile(fs, "/contacts3", temporary_filename)) {
+    fs->remove(temporary_filename);
   }
 }
 
 void DataStore::loadChannels(DataStoreHost* host) {
-    File file = openRead(_getContactsChannelsFS(), "/channels2");
-    if (file) {
-      bool full = false;
-      uint8_t channel_idx = 0;
-      while (!full) {
-        ChannelDetails ch;
-        uint8_t unused[4];
+  FILESYSTEM* fs = _getContactsChannelsFS();
+  char backup_filename[96];
+  const char* filename = readablePath(fs, "/channels2", backup_filename, sizeof(backup_filename));
+  File file = openRead(fs, filename);
+  if (file) {
+    bool full = false;
+    uint8_t channel_idx = 0;
+    while (!full) {
+      ChannelDetails ch;
+      uint8_t unused[4];
 
-        bool success = (file.read(unused, 4) == 4);
-        success = success && (file.read((uint8_t *)ch.name, 32) == 32);
-        success = success && (file.read((uint8_t *)ch.channel.secret, 32) == 32);
+      bool success = (file.read(unused, 4) == 4);
+      success = success && (file.read((uint8_t *)ch.name, 32) == 32);
+      success = success && (file.read((uint8_t *)ch.channel.secret, 32) == 32);
 
-        if (!success) break; // EOF
+      if (!success) break;
 
-        if (host->onChannelLoaded(channel_idx, ch)) {
-          channel_idx++;
-        } else {
-          full = true;
-        }
+      if (host->onChannelLoaded(channel_idx, ch)) {
+        channel_idx++;
+      } else {
+        full = true;
       }
-      file.close();
     }
+    file.close();
+  }
 }
 
 void DataStore::saveChannels(DataStoreHost* host) {
-  File file = openWrite(_getContactsChannelsFS(), "/channels2");
-  if (file) {
-    uint8_t channel_idx = 0;
-    ChannelDetails ch;
-    uint8_t unused[4];
-    memset(unused, 0, 4);
+  FILESYSTEM* fs = _getContactsChannelsFS();
+  const char* temporary_filename = "/channels2.tmp";
+  File file = openWrite(fs, temporary_filename);
+  if (!file) {
+    return;
+  }
 
-    while (host->getChannelForSave(channel_idx, ch)) {
-      bool success = (file.write(unused, 4) == 4);
-      success = success && (file.write((uint8_t *)ch.name, 32) == 32);
-      success = success && (file.write((uint8_t *)ch.channel.secret, 32) == 32);
+  bool success = true;
+  uint8_t channel_idx = 0;
+  ChannelDetails ch;
+  uint8_t unused[4] = {};
 
-      if (!success) break; // write failed
-      channel_idx++;
-    }
-    file.close();
+  while (host->getChannelForSave(channel_idx, ch)) {
+    success = (file.write(unused, 4) == 4);
+    success = success && (file.write((uint8_t *)ch.name, 32) == 32);
+    success = success && (file.write((uint8_t *)ch.channel.secret, 32) == 32);
+    if (!success) break;
+    channel_idx++;
+  }
+
+  file.flush();
+  file.close();
+  if (!success || !commitTemporaryFile(fs, "/channels2", temporary_filename)) {
+    fs->remove(temporary_filename);
   }
 }
 
@@ -382,7 +479,7 @@ void DataStore::checkAdvBlobFile() {
     if (file) {
       BlobRec zeroes;
       memset(&zeroes, 0, sizeof(zeroes));
-      for (int i = 0; i < MAX_BLOBRECS; i++) {     // pre-allocate to fixed size
+      for (int i = 0; i < MAX_BLOBRECS; i++) {
         file.write((uint8_t *) &zeroes, sizeof(zeroes));
       }
       file.close();
@@ -391,6 +488,10 @@ void DataStore::checkAdvBlobFile() {
 }
 
 void DataStore::migrateToSecondaryFS() {
+  if (!meshcorePersistentWritesAllowed()) {
+    return;
+  }
+
   // migrate old adv_blobs, contacts3 and channels2 files to secondary FS if they don't already exist
   if (!_fsExtra->exists("/adv_blobs")) {
     if (_fs->exists("/adv_blobs")) {
@@ -500,11 +601,11 @@ void DataStore::migrateToSecondaryFS() {
 
 uint8_t DataStore::getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]) {
   File file = openRead(_getContactsChannelsFS(), "/adv_blobs");
-  uint8_t len = 0;  // 0 = not found
+  uint8_t len = 0;
   if (file) {
     BlobRec tmp;
     while (file.read((uint8_t *) &tmp, sizeof(tmp)) == sizeof(tmp)) {
-      if (memcmp(key, tmp.key, sizeof(tmp.key)) == 0) {  // only match by 7 byte prefix
+      if (memcmp(key, tmp.key, sizeof(tmp.key)) == 0) {
         len = tmp.len;
         memcpy(dest_buf, tmp.data, len);
         break;
@@ -516,6 +617,7 @@ uint8_t DataStore::getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_b
 }
 
 bool DataStore::putBlobByKey(const uint8_t key[], int key_len, const uint8_t src_buf[], uint8_t len) {
+  if (!meshcorePersistentWritesAllowed()) return false;
   if (len < PUB_KEY_SIZE+4+SIGNATURE_SIZE || len > MAX_ADVERT_PKT_LEN) return false;
   checkAdvBlobFile();
   File file = _getContactsChannelsFS()->open("/adv_blobs", FILE_O_WRITE);
@@ -523,11 +625,10 @@ bool DataStore::putBlobByKey(const uint8_t key[], int key_len, const uint8_t src
     uint32_t pos = 0, found_pos = 0;
     uint32_t min_timestamp = 0xFFFFFFFF;
 
-    // search for matching key OR evict by oldest timestamp
     BlobRec tmp;
     file.seek(0);
     while (file.read((uint8_t *) &tmp, sizeof(tmp)) == sizeof(tmp)) {
-      if (memcmp(key, tmp.key, sizeof(tmp.key)) == 0) {  // only match by 7 byte prefix
+      if (memcmp(key, tmp.key, sizeof(tmp.key)) == 0) {
         found_pos = pos;
         break;
       }
@@ -535,30 +636,32 @@ bool DataStore::putBlobByKey(const uint8_t key[], int key_len, const uint8_t src
         min_timestamp = tmp.timestamp;
         found_pos = pos;
       }
-
       pos += sizeof(tmp);
     }
 
-    memcpy(tmp.key, key, sizeof(tmp.key));  // just record 7 byte prefix of key
+    memcpy(tmp.key, key, sizeof(tmp.key));
     memcpy(tmp.data, src_buf, len);
     tmp.len = len;
     tmp.timestamp = _clock->getCurrentTime();
 
     file.seek(found_pos);
     file.write((uint8_t *) &tmp, sizeof(tmp));
-
+    file.flush();
     file.close();
     return true;
   }
-  return false; // error
+  return false;
 }
+
 bool DataStore::deleteBlobByKey(const uint8_t key[], int key_len) {
-  return true; // this is just a stub on NRF52/STM32 platforms
+  (void)key;
+  (void)key_len;
+  return meshcorePersistentWritesAllowed();
 }
 #else
 inline void makeBlobPath(const uint8_t key[], int key_len, char* path, size_t path_size) {
   char fname[18];
-  if (key_len > 8) key_len = 8; // just use first 8 bytes (prefix)
+  if (key_len > 8) key_len = 8;
   mesh::Utils::toHex(fname, key, key_len);
   sprintf(path, "/bl/%s", fname);
 }
@@ -570,35 +673,36 @@ uint8_t DataStore::getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_b
   if (_fs->exists(path)) {
     File f = openRead(_fs, path);
     if (f) {
-      int len = f.read(dest_buf, 255); // currently MAX 255 byte blob len supported!!
+      int len = f.read(dest_buf, 255);
       f.close();
       return len;
     }
   }
-  return 0; // not found
+  return 0;
 }
 
 bool DataStore::putBlobByKey(const uint8_t key[], int key_len, const uint8_t src_buf[], uint8_t len) {
+  if (!meshcorePersistentWritesAllowed()) return false;
   char path[64];
   makeBlobPath(key, key_len, path, sizeof(path));
 
   File f = openWrite(_fs, path);
   if (f) {
     int n = f.write(src_buf, len);
+    f.flush();
     f.close();
-    if (n == len) return true; // success!
+    if (n == len) return true;
 
-    _fs->remove(path); // blob was only partially written!
+    _fs->remove(path);
   }
-  return false; // error
+  return false;
 }
 
 bool DataStore::deleteBlobByKey(const uint8_t key[], int key_len) {
+  if (!meshcorePersistentWritesAllowed()) return false;
   char path[64];
   makeBlobPath(key, key_len, path, sizeof(path));
-
   _fs->remove(path);
-  
-  return true; // return true even if file did not exist
+  return true;
 }
 #endif

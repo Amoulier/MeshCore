@@ -757,6 +757,15 @@ void EnvironmentSensorManager::initBasicGPS() {
   Serial1.begin(9600);
   #endif
 
+#if defined(HELTEC_V4_SKIP_GPS_STARTUP_PROBE) && HELTEC_V4_SKIP_GPS_STARTUP_PROBE
+  // Keep UART ready for a later user enable, but do not power, reset, probe or
+  // wait for the optional expansion GPS during boot.
+  gps_detected = true;
+  _location->stop();
+  gps_active = false;
+  return;
+#endif
+
   // Try to detect if GPS is physically connected to determine if we should expose the setting
   _location->begin();
   _location->reset();

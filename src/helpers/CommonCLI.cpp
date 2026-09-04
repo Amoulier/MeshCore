@@ -4,6 +4,7 @@
 #include "AdvertDataHelpers.h"
 #include "TxtDataHelpers.h"
 #include <RTClib.h>
+#include <helpers/PersistentWriteGuard.h>
 
 #ifndef BRIDGE_MAX_BAUD
 #define BRIDGE_MAX_BAUD 115200
@@ -28,21 +29,22 @@ static bool isValidName(const char *n) {
 }
 
 void CommonCLI::loadPrefs(FILESYSTEM* fs) {
-  if (fs->exists("/prefs.json")) {
+  const char* prefs_path = fs->exists("/prefs.json")
+      ? "/prefs.json"
+      : (fs->exists("/prefs.json.bak") ? "/prefs.json.bak" : NULL);
+  if (prefs_path) {
 #if defined(RP2040_PLATFORM)
-    File file = fs->open("/prefs.json", "r");
+    File file = fs->open(prefs_path, "r");
 #else
-    File file = fs->open("/prefs.json");
+    File file = fs->open(prefs_path);
 #endif
     if (file) {
-      _prefs->loadSerial(file);   // new Serial prefs
+      _prefs->loadSerial(file);
       file.close();
     }
   } else if (fs->exists("/com_prefs")) {
     loadPrefsInt(fs, "/com_prefs");
-    if (savePrefs(fs)) {  // save to new Serial prefs
-  //    fs->remove("/com_prefs");  // remove old
-    }
+    savePrefs(fs);
   }
 }
 
@@ -141,20 +143,46 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {  // Legacy 
 }
 
 bool CommonCLI::savePrefs(FILESYSTEM* fs) {
-#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  fs->remove("/prefs.json");
-  File file = fs->open("/prefs.json", FILE_O_WRITE);
-#elif defined(RP2040_PLATFORM)
-  File file = fs->open("/prefs.json", "w");
-#else
-  File file = fs->open("/prefs.json", "w", true);
-#endif
-  if (file) {
-    bool success = _prefs->saveSerial(file);
-    file.close();
-    return success;
+  if (!meshcorePersistentWritesAllowed()) {
+    return false;
   }
-  return false;
+
+  const char* temporary_path = "/prefs.json.tmp";
+  const char* backup_path = "/prefs.json.bak";
+  fs->remove(temporary_path);
+#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  File file = fs->open(temporary_path, FILE_O_WRITE);
+#elif defined(RP2040_PLATFORM)
+  File file = fs->open(temporary_path, "w");
+#else
+  File file = fs->open(temporary_path, "w", true);
+#endif
+  if (!file) {
+    return false;
+  }
+
+  const bool encoded = _prefs->saveSerial(file);
+  file.flush();
+  file.close();
+  if (!encoded || !meshcorePersistentWritesAllowed()) {
+    fs->remove(temporary_path);
+    return false;
+  }
+
+  fs->remove(backup_path);
+  const bool had_primary = fs->exists("/prefs.json");
+  if (had_primary && !fs->rename("/prefs.json", backup_path)) {
+    fs->remove(temporary_path);
+    return false;
+  }
+  if (!fs->rename(temporary_path, "/prefs.json")) {
+    if (had_primary) {
+      fs->rename(backup_path, "/prefs.json");
+    }
+    fs->remove(temporary_path);
+    return false;
+  }
+  return true;
 }
 
 #define MIN_LOCAL_ADVERT_INTERVAL   60

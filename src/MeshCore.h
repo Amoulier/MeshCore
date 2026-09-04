@@ -45,12 +45,15 @@ namespace mesh {
 class MainBoard {
 public:
   virtual uint16_t getBattMilliVolts() = 0;
+  virtual int8_t getBattPercent() { return -1; }
   virtual float getMCUTemperature() { return NAN; }
   virtual bool setAdcMultiplier(float multiplier) { return false; };
   virtual float getAdcMultiplier() const { return 0.0f; }
   virtual const char* getManufacturerName() const = 0;
   virtual void onBeforeTransmit() { }
   virtual void onAfterTransmit() { }
+  virtual int8_t mapRadioTxPower(int8_t requested_radio_dbm) { return requested_radio_dbm; }
+  virtual void loop() { }
   virtual void reboot() = 0;
   virtual void powerOff() { /* no op */ }
   // Called by example setup() functions to signal that boot is complete.

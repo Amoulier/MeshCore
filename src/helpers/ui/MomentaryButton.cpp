@@ -2,6 +2,12 @@
 
 #define MULTI_CLICK_WINDOW_MS  280
 
+__attribute__((noinline)) bool platformHandleLongPress(int8_t pin) __attribute__((weak));
+__attribute__((noinline)) bool platformHandleLongPress(int8_t pin) {
+  (void)pin;
+  return false;
+}
+
 MomentaryButton::MomentaryButton(int8_t pin, int long_press_millis, bool reverse, bool pulldownup, bool multiclick) { 
   _pin = pin;
   _reverse = reverse;
@@ -100,6 +106,8 @@ int MomentaryButton::check(bool repeat_click) {
   if (_long_millis > 0 && down_at > 0 && (unsigned long)(millis() - down_at) >= _long_millis) {
     if (_pending_click) {
       // long press during multi-click detection - cancel pending clicks
+      cancelClick();
+    } else if (platformHandleLongPress(_pin)) {
       cancelClick();
     } else {
       event = BUTTON_EVENT_LONG_PRESS;

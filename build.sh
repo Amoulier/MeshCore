@@ -3,6 +3,7 @@ set -euo pipefail
 
 readonly SUPPORTED_TARGETS=(
   heltec_v4_repeater
+  heltec_v4_solar_repeater
   heltec_v4_expansionkit_repeater
   heltec_v4_repeater_bridge_espnow
   heltec_v4_room_server
@@ -42,7 +43,6 @@ for target in "${targets[@]}"; do
     printf '  %s\n' "${SUPPORTED_TARGETS[@]}" >&2
     exit 2
   fi
-
 done
 
 for target in "${targets[@]}"; do

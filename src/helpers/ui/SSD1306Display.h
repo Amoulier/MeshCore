@@ -1,37 +1,50 @@
 #pragma once
 
 #include "DisplayDriver.h"
-#include <Wire.h>
 #include <Adafruit_GFX.h>
 #define SSD1306_NO_SPLASH
 #include <Adafruit_SSD1306.h>
+#include <Wire.h>
 #include <helpers/RefCountedDigitalPin.h>
 
 #ifndef PIN_OLED_RESET
-  #define PIN_OLED_RESET        21 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define PIN_OLED_RESET 21
 #endif
 
 #ifndef DISPLAY_ADDRESS
-  #define DISPLAY_ADDRESS   0x3C
+#define DISPLAY_ADDRESS 0x3C
+#endif
+
+#ifndef HELTEC_V4_DISPLAY_DEFAULT_OFF
+#define HELTEC_V4_DISPLAY_DEFAULT_OFF 0
 #endif
 
 class SSD1306Display : public DisplayDriver {
   Adafruit_SSD1306 display;
-  bool _isOn;
-  uint8_t _color;
-  RefCountedDigitalPin* _peripher_power;
+  bool _isOn = false;
+  bool _initialized = false;
+  bool _railClaimed = false;
+  bool _persistentPreferenceLoaded = false;
+  bool _persistentlyDisabled = false;
+  uint8_t _color = 0;
+  RefCountedDigitalPin *_peripher_power;
 
-  bool i2c_probe(TwoWire& wire, uint8_t addr);
+  bool i2c_probe(TwoWire &wire, uint8_t addr);
+  bool initializePanel();
+  void powerDownPanel();
+  bool loadPersistentDisabled();
+  void savePersistentDisabled(bool disabled);
+
 public:
-  SSD1306Display(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(128, 64), 
-      display(128, 64, &Wire, PIN_OLED_RESET),
-      _peripher_power(peripher_power)
-  {
-    _isOn = false; 
-  }
-  bool begin();
+  SSD1306Display(RefCountedDigitalPin *peripher_power = NULL)
+      : DisplayDriver(128, 64), display(128, 64, &Wire, PIN_OLED_RESET),
+        _peripher_power(peripher_power) {}
 
-  bool isOn() override { return _isOn; }
+  bool begin();
+  bool isOn() override { return _isOn && !_persistentlyDisabled; }
+  bool isPersistentlyDisabled() const { return _persistentlyDisabled; }
+  bool setPersistentlyDisabled(bool disabled);
+
   void turnOn() override;
   void turnOff() override;
   void clear() override;
@@ -39,10 +52,10 @@ public:
   void setTextSize(int sz) override;
   void setColor(ColorVal c) override;
   void setCursor(int x, int y) override;
-  void print(const char* str) override;
+  void print(const char *str) override;
   void fillRect(int x, int y, int w, int h) override;
   void drawRect(int x, int y, int w, int h) override;
-  void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
-  uint16_t getTextWidth(const char* str) override;
+  void drawXbm(int x, int y, const uint8_t *bits, int w, int h) override;
+  uint16_t getTextWidth(const char *str) override;
   void endFrame() override;
 };

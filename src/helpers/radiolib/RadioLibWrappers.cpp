@@ -51,7 +51,7 @@ void RadioLibWrapper::setTxPower(int8_t dbm) {
 #if defined(USE_LR2021)
   idle();
 #endif
-  _radio->setOutputPower(dbm);
+  _radio->setOutputPower(_board->mapRadioTxPower(dbm));
 }
 
 void RadioLibWrapper::idle() {
@@ -88,6 +88,8 @@ void RadioLibWrapper::resetAGC() {
 }
 
 void RadioLibWrapper::loop() {
+  _board->loop();
+
   if (state == STATE_RX && _num_floor_samples < NUM_NOISE_FLOOR_SAMPLES) {
     if (!isReceivingPacket()) {
       int rssi = getCurrentRSSI();

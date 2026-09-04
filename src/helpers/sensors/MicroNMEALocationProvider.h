@@ -43,13 +43,16 @@ class MicroNMEALocationProvider : public LocationProvider {
     mesh::RTCClock* _clock;
     Stream* _gps_serial;
     RefCountedDigitalPin* _peripher_power;
-    int8_t _claims = 0;
+    bool _peripheral_claimed = false;
     int _pin_reset;
     int _pin_en;
     unsigned long next_check = 0;
     long time_valid = 0;
     unsigned long _last_time_sync = 0;
     static const unsigned long TIME_SYNC_INTERVAL = 1800000; // Re-sync every 30 minutes
+#if defined(HELTEC_V4_SKIP_GPS_STARTUP_PROBE) && HELTEC_V4_SKIP_GPS_STARTUP_PROBE
+    bool _suppress_initial_probe = true;
+#endif
 
 public :
     MicroNMEALocationProvider(Stream& ser, mesh::RTCClock* clock = NULL, int pin_reset = GPS_RESET, int pin_en = GPS_EN,RefCountedDigitalPin* peripher_power=NULL) :
@@ -65,17 +68,21 @@ public :
     }
 
     void claim() {
-        _claims++;
+        if (_peripheral_claimed) return;
+        _peripheral_claimed = true;
         if (_peripher_power) _peripher_power->claim();
     }
 
     void release() {
-        if (_claims == 0) return; // avoid negative _claims
-        _claims--;
+        if (!_peripheral_claimed) return;
+        _peripheral_claimed = false;
         if (_peripher_power) _peripher_power->release();
     }
 
     void begin() override {
+#if defined(HELTEC_V4_SKIP_GPS_STARTUP_PROBE) && HELTEC_V4_SKIP_GPS_STARTUP_PROBE
+        if (_suppress_initial_probe) return;
+#endif
         claim();
         if (_pin_en != -1) {
             digitalWrite(_pin_en, GPS_EN_ACTIVE);
@@ -86,6 +93,9 @@ public :
     }
 
     void reset() override {
+#if defined(HELTEC_V4_SKIP_GPS_STARTUP_PROBE) && HELTEC_V4_SKIP_GPS_STARTUP_PROBE
+        if (_suppress_initial_probe) return;
+#endif
         if (_pin_reset != -1) {
             digitalWrite(_pin_reset, GPS_RESET_ACTIVE);
             delay(10);
@@ -100,6 +110,12 @@ public :
         if (_pin_reset != -1) {
             digitalWrite(_pin_reset, GPS_RESET_ACTIVE);
         }
+#if defined(HELTEC_V4_SKIP_GPS_STARTUP_PROBE) && HELTEC_V4_SKIP_GPS_STARTUP_PROBE
+        if (_suppress_initial_probe) {
+            _suppress_initial_probe = false;
+            return;
+        }
+#endif
         release();
     }
 
