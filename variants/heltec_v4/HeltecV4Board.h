@@ -6,10 +6,6 @@
 #include "HeltecV4PowerPolicy.h"
 #include "LoRaFEMControl.h"
 
-#if defined(HELTEC_V4_ENABLE_DFS) && HELTEC_V4_ENABLE_DFS && (!defined(CONFIG_PM_ENABLE) || !CONFIG_PM_ENABLE)
-#error "HELTEC_V4_ENABLE_DFS requires CONFIG_PM_ENABLE in the ESP32 framework"
-#endif
-
 #ifndef ADC_MULTIPLIER
 #define ADC_MULTIPLIER (4.9f * 1.045f)
 #endif
