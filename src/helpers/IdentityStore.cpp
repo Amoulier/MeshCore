@@ -11,6 +11,16 @@ void makeIdentityPath(char *path, size_t path_size, const char *dir, const char 
   snprintf(path, path_size, "%s/%s.id%s", dir, name, suffix);
 }
 
+bool identityKeyPairIsValid(const mesh::LocalIdentity &id)
+{
+  static const uint8_t verification_message[] = {
+    'M', 'e', 's', 'h', 'C', 'o', 'r', 'e', '-', 'i', 'd', 'e', 'n', 't', 'i', 't', 'y'
+  };
+  uint8_t verification_signature[SIGNATURE_SIZE] = {};
+  id.sign(verification_signature, verification_message, sizeof(verification_message));
+  return id.verify(verification_signature, verification_message, sizeof(verification_message));
+}
+
 bool loadIdentityFile(FILESYSTEM *fs, const char *path, mesh::LocalIdentity &id,
                       char *display_name = NULL, int max_name_size = 0)
 {
@@ -27,7 +37,10 @@ bool loadIdentityFile(FILESYSTEM *fs, const char *path, mesh::LocalIdentity &id,
     return false;
   }
 
-  const bool loaded = id.readFrom(file);
+  bool loaded = id.readFrom(file);
+  if (loaded) {
+    loaded = identityKeyPairIsValid(id);
+  }
   if (loaded && display_name != NULL && max_name_size > 0) {
     const int bytes_to_read = max_name_size > 32 ? 32 : max_name_size;
     memset(display_name, 0, max_name_size);
@@ -89,17 +102,8 @@ bool commitIdentityAtomically(FILESYSTEM *fs, const char *path, const mesh::Loca
   }
 
   mesh::LocalIdentity verified;
-  bool key_pair_verified = loadIdentityFile(fs, temporary_path, verified) && verified.matches(id);
-  if (key_pair_verified) {
-    static const uint8_t verification_message[] = {
-      'M', 'e', 's', 'h', 'C', 'o', 'r', 'e', '-', 'i', 'd', 'e', 'n', 't', 'i', 't', 'y'
-    };
-    uint8_t verification_signature[SIGNATURE_SIZE] = {};
-    verified.sign(verification_signature, verification_message, sizeof(verification_message));
-    key_pair_verified = verified.verify(verification_signature, verification_message,
-                                        sizeof(verification_message));
-  }
-  if (!key_pair_verified || !meshcorePersistentWritesAllowed()) {
+  if (!loadIdentityFile(fs, temporary_path, verified) || !verified.matches(id) ||
+      !meshcorePersistentWritesAllowed()) {
     fs->remove(temporary_path);
     return false;
   }
