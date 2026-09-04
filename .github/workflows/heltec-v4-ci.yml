@@ -1,0 +1,80 @@
+name: Heltec V4 CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "fix/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: heltec-v4-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scope-audit:
+    name: Verify Heltec V4-only scope
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Audit retained hardware support
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "$(find variants -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)" = "heltec_v4"
+          test "$(find boards -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)" = "heltec_v4.json"
+          test "$(find arch -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)" = "esp32"
+          test ! -d lib/nrf52
+          test ! -d variants/heltec_v4_r8
+          ! grep -R --line-number --fixed-strings "heltec_v4_tft" platformio.ini variants/heltec_v4/platformio.ini
+          ! grep -R --line-number --fixed-strings "heltec_v4_r8" platformio.ini variants/heltec_v4/platformio.ini
+          bash -n build.sh
+
+  unit-tests:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Run native tests
+        run: pio test -e native -e native_kiss_modem -vv
+
+  firmware:
+    name: Build ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - heltec_v4_repeater
+          - heltec_v4_expansionkit_repeater
+          - heltec_v4_repeater_bridge_espnow
+          - heltec_v4_room_server
+          - heltec_v4_terminal_chat
+          - heltec_v4_companion_radio_usb
+          - heltec_v4_companion_radio_ble
+          - heltec_v4_companion_radio_wifi
+          - heltec_v4_sensor
+          - heltec_v4_kiss_modem
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Compile firmware
+        run: pio run -e ${{ matrix.environment }}

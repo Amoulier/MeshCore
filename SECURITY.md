@@ -1,57 +1,29 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-Security fixes are applied to the latest release only. We do not backport
-fixes to older versions.
+Security fixes are applied to the latest Heltec V4 release and the current `main` branch. Older releases are not maintained unless explicitly stated in their release notes.
 
-| Version | Supported |
-|---------|-----------|
-| 1.15+ | ✅ |
-| <1.15 | ❌ |
+## Reporting a vulnerability
 
-## Reporting a Vulnerability
+Do not report security vulnerabilities through a public issue. Use GitHub's private vulnerability reporting for this repository.
 
-**Please do not report security vulnerabilities through public GitHub issues.**
-
-Use GitHub's private vulnerability reporting instead:
-1. Go to the **Security** tab of this repository
-2. Click **Report a vulnerability**
-3. Fill in the details and submit
-
-### What to include
-
-A useful report tells us:
-- Which component or file is affected
-- What an attacker can do (impact) and under what conditions
-- A minimal reproduction case or proof-of-concept if you have one
-- Whether you believe it is remotely exploitable
-
-You do not need a working exploit to report. An incomplete report is better
-than no report.
-
-## What to expect
-
-This is a volunteer-maintained open-source project. We will do our best to
-respond in a reasonable timeframe, but cannot commit to specific deadlines.
-
-We ask that you give us a fair opportunity to investigate and address the
-issue before any public disclosure. If you have not heard back after
-**90 days**, feel free to follow up or proceed with disclosure at your
-discretion.
+Include the affected firmware target, Heltec V4 hardware revision, impact, triggering conditions, and a minimal reproduction when possible. Do not include private keys, production credentials, precise node locations, or other sensitive deployment data in public material.
 
 ## Scope
 
-In scope:
-- Remote code execution, memory corruption, or denial-of-service via crafted
-  radio packets
-- Authentication or encryption bypasses
-- Vulnerabilities in the packet routing or path handling logic
+In scope for this fork:
+
+- Vulnerabilities reproducible on a retained Heltec V4 firmware target.
+- Memory corruption, denial of service, authentication bypass, or encryption bypass triggered remotely.
+- Heltec V4-specific storage or power behavior that can predictably corrupt security-sensitive state.
+- Unsafe handling of Bluetooth, USB, Wi-Fi, ESP-NOW, GPS, display, or radio input in the retained targets.
+
+General MeshCore protocol vulnerabilities should also be reported to the upstream `meshcore-dev/MeshCore` project so the wider ecosystem can receive the fix.
 
 Out of scope:
-- Physical access attacks (e.g., JTAG, UART extraction of keys)
-- Regulatory compliance (duty cycle, frequency restrictions)
-- Jamming or other physical-layer radio interference
-- Issues in third-party libraries (RadioLib, Crypto, etc.) — report those
-  upstream
-- "Best practice" suggestions without a demonstrated attack path
+
+- Physical-access attacks such as direct flash extraction or invasive hardware probing.
+- Radio jamming and ordinary physical-layer interference.
+- Regulatory compliance questions.
+- Vulnerabilities that exist solely in an unmodified third-party dependency; report those to the dependency's maintainer.
