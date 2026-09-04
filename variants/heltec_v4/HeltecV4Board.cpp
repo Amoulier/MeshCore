@@ -302,6 +302,183 @@ void HeltecV4Board::begin()
   if (preferences.begin(BOARD_PREFS_NAMESPACE, true)) {
     fem_lna_nvs_explicit = preferences.getBool(FEM_LNA_EXPLICIT_KEY, false);
     if (fem_lna_nvs_explicit) {
+      enable_lna = preferences.getBool(FEM_LNA_ENABLED_KEY, true);
+    }
+    preferences.end();
+  }
+  setLoRaFemLnaEnabled(enable_lna);
+
+  periph_power.begin();
+  configureCpuPowerManagement();
+
+  const esp_reset_reason_t reason = esp_reset_reason();
+  if (reason == ESP_RST_DEEPSLEEP) {
+    const uint64_t wakeup_source = esp_sleep_get_ext1_wakeup_status();
+    if (wakeup_source & (1ULL << P_LORA_DIO_1)) {
+      startup_reason = BD_STARTUP_RX_PACKET;
+    }
+
+    gpio_hold_dis(static_cast<gpio_num_t>(P_LORA_NSS));
+    rtc_gpio_deinit(static_cast<gpio_num_t>(P_LORA_DIO_1));
+  }
+}
+
+void HeltecV4Board::loop()
+{
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+  if (inhibit_sleep) {
+    return;
+  }
+
+  const uint32_t now = millis();
+  if (now - last_critical_battery_check < HELTEC_V4_BATTERY_CHECK_INTERVAL_MSEC) {
+    return;
+  }
+  last_critical_battery_check = now;
+
+  const uint16_t battery_millivolts = getBattMilliVolts();
+  critical_low_readings = heltec_v4::updateLowReadingCounter(
+      critical_low_readings, battery_millivolts,
+      HELTEC_V4_BATTERY_BOOT_GUARD_MIN_MILLIVOLTS,
+      HELTEC_V4_BATTERY_CRITICAL_MILLIVOLTS,
+      HELTEC_V4_BATTERY_CRITICAL_READINGS);
+  if (critical_low_readings >= HELTEC_V4_BATTERY_CRITICAL_READINGS) {
+    enterCriticalBatterySleep(true);
+  }
+#endif
+}
+
+void HeltecV4Board::onBeforeTransmit()
+{
+#if defined(P_LORA_TX_LED) && !(defined(HELTEC_V4_DISABLE_TX_LED) && HELTEC_V4_DISABLE_TX_LED)
+  digitalWrite(P_LORA_TX_LED, HIGH);
+#endif
+  loRaFEMControl.setTxModeEnable();
+}
+
+void HeltecV4Board::onAfterTransmit()
+{
+#if defined(P_LORA_TX_LED) && !(defined(HELTEC_V4_DISABLE_TX_LED) && HELTEC_V4_DISABLE_TX_LED)
+  digitalWrite(P_LORA_TX_LED, LOW);
+#endif
+  loRaFEMControl.setRxModeEnable();
+}
+
+bool HeltecV4Board::startOTAUpdate(const char *id, char reply[])
+{
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+  const uint16_t battery_millivolts = readBatteryMilliVoltsRaw();
+  if (battery_millivolts < HELTEC_V4_BATTERY_RECOVERY_MILLIVOLTS) {
+    sprintf(reply, "Error: battery %umV; OTA requires at least %umV",
+            static_cast<unsigned>(battery_millivolts),
+            static_cast<unsigned>(HELTEC_V4_BATTERY_RECOVERY_MILLIVOLTS));
+    return false;
+  }
+#endif
+  return ESP32Board::startOTAUpdate(id, reply);
+}
+
+void HeltecV4Board::powerOff()
+{
+  persistent_writes_allowed = false;
+  heltecV4CriticalPreSleep();
+  loRaFEMControl.setSleepModeEnable();
+#ifdef PIN_OLED_RESET
+  configureAndHoldPin(PIN_OLED_RESET, LOW);
+#endif
+  configureAndHoldPin(PIN_VEXT_EN, HIGH);
+#ifdef PIN_GPS_EN
+  configureAndHoldPin(PIN_GPS_EN, !PIN_GPS_EN_ACTIVE);
+#endif
+#ifdef PIN_GPS_RESET
+  configureAndHoldPin(PIN_GPS_RESET, PIN_GPS_RESET_ACTIVE);
+#endif
+#ifdef P_LORA_TX_LED
+  configureAndHoldPin(P_LORA_TX_LED, LOW);
+#endif
+  configureAndHoldPin(P_LORA_NSS, HIGH);
+  configureAndHoldPin(P_LORA_KCT8103L_PA_CTX, HIGH);
+  configureAndHoldPin(P_LORA_GC1109_PA_TX_EN, LOW);
+  configureAndHoldPin(P_LORA_GC1109_PA_EN, LOW);
+  configureAndHoldPin(P_LORA_PA_POWER, LOW);
+  gpio_deep_sleep_hold_en();
+
+  Serial.flush();
+  delay(20);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+  esp_deep_sleep_start();
+}
+
+uint16_t HeltecV4Board::getBattMilliVolts()
+{
+  last_battery_millivolts = readBatteryMilliVoltsRaw();
+  updateReportedBatteryPercent(last_battery_millivolts);
+  return last_battery_millivolts;
+}
+
+int8_t HeltecV4Board::getBattPercent()
+{
+  if (reported_battery_percent < 0) {
+    getBattMilliVolts();
+  }
+  return static_cast<int8_t>(reported_battery_percent);
+}
+
+int8_t HeltecV4Board::mapRadioTxPower(int8_t requested_radio_dbm)
+{
+  if (requested_radio_dbm < -9) {
+    requested_radio_dbm = -9;
+  } else if (requested_radio_dbm > 22) {
+    requested_radio_dbm = 22;
+  }
+
+  last_requested_radio_dbm = requested_radio_dbm;
+  if (loRaFEMControl.getFEMType() == GC1109_PA) {
+    last_radio_input_dbm = heltec_v4::clampGc1109RadioInput(
+        requested_radio_dbm, HELTEC_V4_MAX_OUTPUT_POWER_DBM);
+  } else if (loRaFEMControl.getFEMType() == KCT8103L_PA) {
+    last_radio_input_dbm = heltec_v4::clampKct8103lRadioInput(
+        requested_radio_dbm, HELTEC_V4_MAX_OUTPUT_POWER_DBM);
+  } else {
+    last_radio_input_dbm = requested_radio_dbm;
+  }
+  return last_radio_input_dbm;
+}
+
+const char *HeltecV4Board::getManufacturerName() const
+{
+#ifdef HELTEC_LORA_V4_TFT
+  return loRaFEMControl.getFEMType() == KCT8103L_PA ? "Heltec V4.3 TFT" : "Heltec V4 TFT";
+#else
+  return loRaFEMControl.getFEMType() == KCT8103L_PA ? "Heltec V4.3 OLED" : "Heltec V4 OLED";
+#endif
+}
+
+bool HeltecV4Board::setLoRaFemLnaEnabled(bool enable)
+{
+  if (!loRaFEMControl.isLnaCanControl()) {
+    return false;
+  }
+
+  loRaFEMControl.setLNAEnable(enable);
+  loRaFEMControl.setRxModeEnable();
+  return true;
+}
+
+bool HeltecV4Board::isLoRaFemLnaEnabled() const
+{
+  return loRaFEMControl.isLNAEnabled();
+}
+
+void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)
+{
+  _prefs = prefs;
+  if (!_prefs || !loRaFEMControl.isLnaCanControl()) {
+    return;
+  }
+
+  if (fem_lna_nvs_explicit) {
     // Once migrated, NVS is authoritative. Only touch the legacy JSON
     // field when it actually differs, avoiding an unnecessary flash save.
     const char *desired_fem_rxgain = isLoRaFemLnaEnabled() ? "1" : "0";
