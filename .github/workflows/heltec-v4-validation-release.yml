@@ -43,7 +43,7 @@ jobs:
           set -euo pipefail
           short_sha="$(git rev-parse --short=8 HEAD)"
           build_date="$(date -u '+%d-%b-%Y')"
-          version_string="${GIT_TAG_VERSION}-${short_sha}"
+          version_string="${GITHUB_REF_NAME}-${short_sha}"
           export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS:-} -DFIRMWARE_BUILD_DATE='\"${build_date}\"' -DFIRMWARE_VERSION='\"${version_string}\"'"
 
           pio run -e "${TARGET}"
