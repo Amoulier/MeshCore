@@ -61,6 +61,19 @@ jobs:
           test "$(grep -Ec '^  heltec_v4_[a-z0-9_]+$' build.sh)" -eq "${#expected_targets[@]}"
           test "$(grep -Ec '^          - heltec_v4_[a-z0-9_]+$' .github/workflows/heltec-v4-validation-release.yml)" -eq "${#expected_targets[@]}"
 
+          application_loops=(
+            examples/companion_radio/main.cpp
+            examples/simple_repeater/main.cpp
+            examples/simple_room_server/main.cpp
+            examples/simple_secure_chat/main.cpp
+            examples/simple_sensor/main.cpp
+            examples/kiss_modem/main.cpp
+          )
+
+          for source in "${application_loops[@]}"; do
+            test "$(grep -Ec '^  board\.loop\(\);$' "${source}")" -eq 1
+          done
+
   unit-tests:
     name: Host tests
     runs-on: ubuntu-latest
