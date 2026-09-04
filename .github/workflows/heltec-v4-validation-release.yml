@@ -43,14 +43,16 @@ jobs:
           set -euo pipefail
           short_sha="$(git rev-parse --short=8 HEAD)"
           build_date="$(date -u '+%d-%b-%Y')"
-          version_string="${GITHUB_REF_NAME}-${short_sha}"
-          export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS:-} -DFIRMWARE_BUILD_DATE='\"${build_date}\"' -DFIRMWARE_VERSION='\"${version_string}\"'"
+          release_version="${GITHUB_REF_NAME}"
+          firmware_version="${release_version#heltec-v4-validation-}-${short_sha}"
+          package_version="${release_version}-${short_sha}"
+          export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS:-} -DFIRMWARE_BUILD_DATE='\"${build_date}\"' -DFIRMWARE_VERSION='\"${firmware_version}\"'"
 
           pio run -e "${TARGET}"
           pio run -e "${TARGET}" -t mergebin
 
           mkdir -p out
-          base="${TARGET}-${version_string}"
+          base="${TARGET}-${package_version}"
           cp ".pio/build/${TARGET}/firmware.bin" "out/${base}.bin"
           cp ".pio/build/${TARGET}/firmware-merged.bin" "out/${base}-merged.bin"
 
@@ -61,7 +63,8 @@ jobs:
 
           cat > "out/${base}.txt" <<EOF
           Target: ${TARGET}
-          Version: ${version_string}
+          Release: ${release_version}
+          Firmware version: ${firmware_version}
           Commit: $(git rev-parse HEAD)
           Build date (UTC): ${build_date}
 
