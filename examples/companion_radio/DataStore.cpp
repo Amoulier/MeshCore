@@ -200,12 +200,33 @@ File DataStore::openRead(FILESYSTEM* fs, const char* filename) {
 #endif
 }
 
+static bool removeFileAndSidecars(FILESYSTEM* fs, const char* filename) {
+  if (!meshcorePersistentWritesAllowed()) {
+    return false;
+  }
+
+  char temporary_filename[96];
+  char backup_filename[96];
+  makeSidecarPath(temporary_filename, sizeof(temporary_filename), filename, ".tmp");
+  makeSidecarPath(backup_filename, sizeof(backup_filename), filename, ".bak");
+
+  // Remove recovery copies first. If either removal fails, keep the
+  // primary intact rather than report a deletion that can resurrect.
+  if (fs->exists(temporary_filename) && !fs->remove(temporary_filename)) {
+    return false;
+  }
+  if (fs->exists(backup_filename) && !fs->remove(backup_filename)) {
+    return false;
+  }
+  return fs->remove(filename);
+}
+
 bool DataStore::removeFile(const char* filename) {
-  return meshcorePersistentWritesAllowed() && _fs->remove(filename);
+  return removeFileAndSidecars(_fs, filename);
 }
 
 bool DataStore::removeFile(FILESYSTEM* fs, const char* filename) {
-  return meshcorePersistentWritesAllowed() && fs->remove(filename);
+  return removeFileAndSidecars(fs, filename);
 }
 
 bool DataStore::formatFileSystem() {
