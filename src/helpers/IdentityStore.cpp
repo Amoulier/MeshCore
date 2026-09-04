@@ -119,19 +119,25 @@ bool IdentityStore::load(const char *name, mesh::LocalIdentity &id)
 {
   char path[64];
   char backup_path[64];
+  char temporary_path[64];
   makeIdentityPath(path, sizeof(path), _dir, name, "");
   makeIdentityPath(backup_path, sizeof(backup_path), _dir, name, ".bak");
-  return loadIdentityFile(_fs, path, id) || loadIdentityFile(_fs, backup_path, id);
+  makeIdentityPath(temporary_path, sizeof(temporary_path), _dir, name, ".tmp");
+  return loadIdentityFile(_fs, path, id) || loadIdentityFile(_fs, backup_path, id) ||
+         loadIdentityFile(_fs, temporary_path, id);
 }
 
 bool IdentityStore::load(const char *name, mesh::LocalIdentity &id, char display_name[], int max_name_size)
 {
   char path[64];
   char backup_path[64];
+  char temporary_path[64];
   makeIdentityPath(path, sizeof(path), _dir, name, "");
   makeIdentityPath(backup_path, sizeof(backup_path), _dir, name, ".bak");
+  makeIdentityPath(temporary_path, sizeof(temporary_path), _dir, name, ".tmp");
   return loadIdentityFile(_fs, path, id, display_name, max_name_size) ||
-         loadIdentityFile(_fs, backup_path, id, display_name, max_name_size);
+         loadIdentityFile(_fs, backup_path, id, display_name, max_name_size) ||
+         loadIdentityFile(_fs, temporary_path, id, display_name, max_name_size);
 }
 
 bool IdentityStore::save(const char *name, const mesh::LocalIdentity &id)
