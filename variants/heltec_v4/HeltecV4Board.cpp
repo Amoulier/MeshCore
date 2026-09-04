@@ -143,6 +143,7 @@ void HeltecV4Board::releaseCriticalBatteryHolds()
   releasePinHoldAtLevel(P_LORA_TX_LED, LOW);
 #endif
   releasePinHoldAtLevel(P_LORA_NSS, HIGH);
+  releasePinHoldAtLevel(P_LORA_RESET, HIGH);
   releasePinHoldAtLevel(P_LORA_PA_POWER, LOW);
   releasePinHoldAtLevel(P_LORA_GC1109_PA_EN, LOW);
   releasePinHoldAtLevel(P_LORA_GC1109_PA_TX_EN, LOW);
@@ -208,7 +209,7 @@ void HeltecV4Board::configureCpuPowerManagement()
 #endif
 }
 
-void HeltecV4Board::enterCriticalBatterySleep(bool runtime_shutdown)
+void HeltecV4Board::enterCriticalBatterySleep(bool runtime_shutdown, bool force_radio_reset)
 {
 #if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
   persistent_writes_allowed = false;
@@ -234,6 +235,12 @@ void HeltecV4Board::enterCriticalBatterySleep(bool runtime_shutdown)
   configureAndHoldPin(P_LORA_TX_LED, LOW);
 #endif
   configureAndHoldPin(P_LORA_NSS, HIGH);
+  if (force_radio_reset) {
+    const gpio_num_t radio_reset = static_cast<gpio_num_t>(P_LORA_RESET);
+    gpio_pullup_dis(radio_reset);
+    gpio_pulldown_dis(radio_reset);
+    configureAndHoldPin(P_LORA_RESET, LOW);
+  }
   configureAndHoldPin(P_LORA_GC1109_PA_TX_EN, LOW);
   configureAndHoldPin(P_LORA_KCT8103L_PA_CTX, HIGH);
   configureAndHoldPin(P_LORA_GC1109_PA_EN, LOW);
@@ -249,6 +256,7 @@ void HeltecV4Board::enterCriticalBatterySleep(bool runtime_shutdown)
   esp_deep_sleep_start();
 #else
   (void)runtime_shutdown;
+  (void)force_radio_reset;
 #endif
 }
 
@@ -267,13 +275,16 @@ void HeltecV4Board::begin()
     releaseCriticalBatteryHolds();
   }
 
+  const bool timer_wake = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
+  const bool radio_state_known_safe = heltec_v4::isBatteryRecoveryRadioStateKnownSafe(
+      recovery_was_latched, timer_wake);
   const uint16_t boot_millivolts = readBatteryMilliVoltsRaw();
   if (heltec_v4::shouldUseCriticalBatteryRecovery(
           boot_millivolts, recovery_was_latched,
           HELTEC_V4_BATTERY_BOOT_GUARD_MIN_MILLIVOLTS,
           HELTEC_V4_BATTERY_CRITICAL_MILLIVOLTS,
           HELTEC_V4_BATTERY_RECOVERY_MILLIVOLTS)) {
-    enterCriticalBatterySleep(false);
+    enterCriticalBatterySleep(false, !radio_state_known_safe);
   }
 
   if (recovery_was_latched) {
@@ -343,7 +354,7 @@ void HeltecV4Board::loop()
       HELTEC_V4_BATTERY_CRITICAL_MILLIVOLTS,
       HELTEC_V4_BATTERY_CRITICAL_READINGS);
   if (critical_low_readings >= HELTEC_V4_BATTERY_CRITICAL_READINGS) {
-    enterCriticalBatterySleep(true);
+    enterCriticalBatterySleep(true, false);
   }
 #endif
 }

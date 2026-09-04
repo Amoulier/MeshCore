@@ -24,6 +24,14 @@ TEST(HeltecV4CriticalBattery, LatchedRecoveryUsesHysteresis)
   EXPECT_FALSE(shouldUseCriticalBatteryRecovery(3650, true, 2500, 3500, 3650));
 }
 
+TEST(HeltecV4CriticalBattery, RadioStateIsSafeOnlyOnLatchedTimerWake)
+{
+  EXPECT_TRUE(isBatteryRecoveryRadioStateKnownSafe(true, true));
+  EXPECT_FALSE(isBatteryRecoveryRadioStateKnownSafe(true, false));
+  EXPECT_FALSE(isBatteryRecoveryRadioStateKnownSafe(false, true));
+  EXPECT_FALSE(isBatteryRecoveryRadioStateKnownSafe(false, false));
+}
+
 TEST(HeltecV4CriticalBattery, RuntimeCounterRequiresConsecutiveReadings)
 {
   uint8_t count = 0;

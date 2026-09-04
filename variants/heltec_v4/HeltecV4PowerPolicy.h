@@ -45,6 +45,11 @@ constexpr bool shouldUseCriticalBatteryRecovery(uint16_t battery_millivolts,
               battery_millivolts <= critical_millivolts);
 }
 
+constexpr bool isBatteryRecoveryRadioStateKnownSafe(bool recovery_latched, bool timer_wake)
+{
+  return recovery_latched && timer_wake;
+}
+
 inline uint8_t updateLowReadingCounter(uint8_t current_count,
                                       uint16_t battery_millivolts,
                                       uint16_t boot_guard_min_millivolts,
