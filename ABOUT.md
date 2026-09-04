@@ -13,6 +13,8 @@ It does not support Heltec V4 TFT, Heltec V4 R8, other Heltec devices, or unrela
 
 Shared MeshCore protocol, application, cryptography and test code remains only where it is required to compile or validate one of the supported Heltec V4 firmware environments.
 
+The solar recovery path distinguishes a radio already placed into controlled sleep from an unknown cold-boot state. Only the unknown state holds SX1262 reset low; timer wakes preserve the lower-current controlled sleep path.
+
 Validation tags package both application/OTA and complete merged images with checksums for every retained target. A validation prerelease remains explicitly pre-release until current-consumption, RF-output, connectivity and solar recovery tests have been completed on the physical Heltec V4 hardware.
 
 This fork is maintained independently from `meshcore-dev/MeshCore` and must not be represented as an official MeshCore release.
