@@ -1,0 +1,37 @@
+name: Finalize Heltec V4 audit patch
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-power-parity
+    paths:
+      - tools/heltec_v4_finalize_patch.py
+      - .github/workflows/heltec-v4-finalize-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/heltec-v4-power-parity
+          fetch-depth: 0
+
+      - name: Apply audited source edits
+        run: python tools/heltec_v4_finalize_patch.py
+
+      - name: Remove one-time patch machinery
+        run: git rm tools/heltec_v4_finalize_patch.py .github/workflows/heltec-v4-finalize-patch.yml
+
+      - name: Commit finalized implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(heltec-v4): finalize audited UI, RF and storage behavior"
+          git push origin HEAD:feature/heltec-v4-power-parity
