@@ -1,4 +1,5 @@
 #include "RegionMap.h"
+#include <helpers/PersistentWriteGuard.h>
 #include <helpers/TxtDataHelpers.h>
 #include <SHA256.h>
 
@@ -40,6 +41,65 @@ private:
   size_t _pos;
 };
 
+namespace {
+
+static void makeSidecarPath(char *dest, size_t dest_size, const char *path, const char *suffix)
+{
+  snprintf(dest, dest_size, "%s%s", path, suffix);
+}
+
+static File openWrite(FILESYSTEM *fs, const char *filename)
+{
+  if (!meshcorePersistentWritesAllowed()) {
+    return File();
+  }
+#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  fs->remove(filename);
+  return fs->open(filename, FILE_O_WRITE);
+#elif defined(RP2040_PLATFORM)
+  return fs->open(filename, "w");
+#else
+  return fs->open(filename, "w", true);
+#endif
+}
+
+static const char *readablePath(FILESYSTEM *fs, const char *primary, char *backup, size_t backup_size)
+{
+  if (fs->exists(primary)) {
+    return primary;
+  }
+  makeSidecarPath(backup, backup_size, primary, ".bak");
+  return fs->exists(backup) ? backup : primary;
+}
+
+static bool commitTemporaryFile(FILESYSTEM *fs, const char *primary, const char *temporary)
+{
+  if (!meshcorePersistentWritesAllowed()) {
+    fs->remove(temporary);
+    return false;
+  }
+
+  char backup[128];
+  makeSidecarPath(backup, sizeof(backup), primary, ".bak");
+  fs->remove(backup);
+
+  const bool had_primary = fs->exists(primary);
+  if (had_primary && !fs->rename(primary, backup)) {
+    fs->remove(temporary);
+    return false;
+  }
+
+  if (!fs->rename(temporary, primary)) {
+    if (had_primary) {
+      fs->rename(backup, primary);
+    }
+    fs->remove(temporary);
+    return false;
+  }
+  return true;
+}
+
+} // namespace
 
 RegionMap::RegionMap(TransportKeyStore& store) : _store(&store) {
   next_id = 1; num_regions = 0;
@@ -58,23 +118,15 @@ static const char* skip_hash(const char* name) {
   return *name == '#' ? name + 1 : name;
 }
 
-static File openWrite(FILESYSTEM* _fs, const char* filename) {
-  #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-    _fs->remove(filename);
-    return _fs->open(filename, FILE_O_WRITE);
-  #elif defined(RP2040_PLATFORM)
-    return _fs->open(filename, "w");
-  #else
-    return _fs->open(filename, "w", true);
-  #endif
-}
-
 bool RegionMap::load(FILESYSTEM* _fs, const char* path) {
-  if (_fs->exists(path ? path : "/regions2")) {
+  const char *primary_path = path ? path : "/regions2";
+  char backup_path[128];
+  const char *read_path = readablePath(_fs, primary_path, backup_path, sizeof(backup_path));
+  if (_fs->exists(read_path)) {
   #if defined(RP2040_PLATFORM)
-    File file = _fs->open(path ? path : "/regions2", "r");
+    File file = _fs->open(read_path, "r");
   #else
-    File file = _fs->open(path ? path : "/regions2");
+    File file = _fs->open(read_path);
   #endif
 
     if (file) {
@@ -117,7 +169,16 @@ bool RegionMap::load(FILESYSTEM* _fs, const char* path) {
 }
 
 bool RegionMap::save(FILESYSTEM* _fs, const char* path) {
-  File file = openWrite(_fs, path ? path : "/regions2");
+  if (!meshcorePersistentWritesAllowed()) {
+    return false;
+  }
+
+  const char *primary_path = path ? path : "/regions2";
+  char temporary_path[128];
+  makeSidecarPath(temporary_path, sizeof(temporary_path), primary_path, ".tmp");
+  _fs->remove(temporary_path);
+
+  File file = openWrite(_fs, temporary_path);
   if (file) {
     uint8_t pad[128];
     memset(pad, 0, sizeof(pad));
@@ -140,8 +201,14 @@ bool RegionMap::save(FILESYSTEM* _fs, const char* path) {
         if (!success) break; // write failed
       }
     }
+    file.flush();
     file.close();
-    return success;
+
+    if (!success || !commitTemporaryFile(_fs, primary_path, temporary_path)) {
+      _fs->remove(temporary_path);
+      return false;
+    }
+    return true;
   }
   return false;  // failed
 }
@@ -311,13 +378,13 @@ size_t RegionMap::exportTo(char *dest, size_t max_len) const {
   if (!dest || max_len == 0) return 0;
 
   BufStream bs(dest, max_len);
-  exportTo(bs);              // ← reuse existing logic
+  exportTo(bs);              // reuse existing logic
   return bs.length();
 }
 
 int RegionMap::exportNamesTo(char *dest, int max_len, uint8_t mask, bool invert) {
   char *dp = dest;
-  
+
   // Check wildcard region
   bool wildcard_matches = invert ? (wildcard.flags & mask) : !(wildcard.flags & mask);
   if (wildcard_matches) {
@@ -325,12 +392,12 @@ int RegionMap::exportNamesTo(char *dest, int max_len, uint8_t mask, bool invert)
     *dp++ = ',';
   }
 
-    for (int i = 0; i < num_regions; i++) {
+  for (int i = 0; i < num_regions; i++) {
     auto region = &regions[i];
-    
+
     // Check if region matches the filter criteria
     bool region_matches = invert ? (region->flags & mask) : !(region->flags & mask);
-    
+
     if (region_matches) {
       int len = strlen(skip_hash(region->name));
       if ((dp - dest) + len + 2 < max_len) {   // only append if name will fit
