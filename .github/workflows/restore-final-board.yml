@@ -1,0 +1,79 @@
+name: Restore audited Heltec V4 board implementation
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-power-parity
+    paths:
+      - .github/workflows/restore-final-board.yml
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/heltec-v4-power-parity
+          fetch-depth: 0
+
+      - name: Restore the last audited board file and apply the scoped cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git show aeab54178c247288f55be9e69535a725fe98914c:variants/heltec_v4/HeltecV4Board.cpp \
+            > variants/heltec_v4/HeltecV4Board.cpp
+
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("variants/heltec_v4/HeltecV4Board.cpp")
+          text = path.read_text(encoding="utf-8")
+          function_start = text.index("void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)\n")
+          start = text.index("  if (fem_lna_nvs_explicit) {\n", function_start)
+          end = text.index("\n\n  char legacy_fem_rxgain", start)
+          replacement = (
+              "  if (fem_lna_nvs_explicit) {\n"
+              "    // Once migrated, NVS is authoritative. Only touch the legacy JSON\n"
+              "    // field when it actually differs, avoiding an unnecessary flash save.\n"
+              "    const char *desired_fem_rxgain = isLoRaFemLnaEnabled() ? \"1\" : \"0\";\n"
+              "    char stored_fem_rxgain[8] = {};\n"
+              "    if (!_prefs->getByKey(\"fem_rxgain\", stored_fem_rxgain, sizeof(stored_fem_rxgain)) ||\n"
+              "        strcmp(stored_fem_rxgain, desired_fem_rxgain) != 0) {\n"
+              "      _prefs->setByKey(\"fem_rxgain\", desired_fem_rxgain);\n"
+              "    }\n"
+              "    return;\n"
+              "  }"
+          )
+          text = text[:start] + replacement + text[end:]
+
+          # Sanity-check that the board implementation was not truncated.
+          required_symbols = [
+              "void HeltecV4Board::begin()",
+              "void HeltecV4Board::loop()",
+              "void HeltecV4Board::onBeforeTransmit()",
+              "void HeltecV4Board::onAfterTransmit()",
+              "uint16_t HeltecV4Board::getBattMilliVolts()",
+              "void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)",
+              "bool HeltecV4Board::handleCommand(",
+          ]
+          for symbol in required_symbols:
+              if text.count(symbol) != 1:
+                  raise SystemExit(f"Board sanity check failed for: {symbol}")
+
+          if text.count("const char *desired_fem_rxgain") != 1:
+              raise SystemExit("Scoped FEM preference cleanup was not applied exactly once")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          rm .github/workflows/restore-final-board.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add variants/heltec_v4/HeltecV4Board.cpp .github/workflows/restore-final-board.yml
+          git commit -m "fix(heltec-v4): restore complete board implementation"
+          git push origin HEAD:feature/heltec-v4-power-parity
