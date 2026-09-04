@@ -68,6 +68,24 @@ TEST(HeltecV4RadioPower, MapsDesiredAntennaPowerToSafeSx1262Input)
   EXPECT_EQ(21, kct8103lRadioInputPower(28));
 }
 
+TEST(HeltecV4RadioPower, PreservesLegacyRadioInputWhenAlreadySafe)
+{
+  EXPECT_EQ(10, clampGc1109RadioInput(10, 22));
+  EXPECT_EQ(9, clampKct8103lRadioInput(10, 22));
+  EXPECT_EQ(-9, clampGc1109RadioInput(-12, 22));
+  EXPECT_EQ(-5, clampKct8103lRadioInput(-5, 22));
+}
+
+TEST(HeltecV4RadioPower, CapsLegacyRadioInputByDetectedFem)
+{
+  EXPECT_EQ(11, clampGc1109RadioInput(22, 22));
+  EXPECT_EQ(9, clampKct8103lRadioInput(22, 22));
+  EXPECT_EQ(22, gc1109EstimatedOutput(11));
+  EXPECT_EQ(22, kct8103lEstimatedOutput(9));
+  EXPECT_EQ(21, gc1109EstimatedOutput(10));
+  EXPECT_EQ(22, kct8103lEstimatedOutput(9));
+}
+
 int main(int argc, char **argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
