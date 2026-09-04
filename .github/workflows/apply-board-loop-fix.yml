@@ -1,0 +1,55 @@
+name: Apply board periodic-loop integration
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-power-parity
+    paths:
+      - .github/workflows/apply-board-loop-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/heltec-v4-power-parity
+          fetch-depth: 0
+
+      - name: Call the board periodic hook from every retained application
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path("examples/companion_radio/main.cpp"),
+              Path("examples/simple_repeater/main.cpp"),
+              Path("examples/simple_room_server/main.cpp"),
+              Path("examples/simple_secure_chat/main.cpp"),
+              Path("examples/simple_sensor/main.cpp"),
+              Path("examples/kiss_modem/main.cpp"),
+          ]
+
+          for path in paths:
+              text = path.read_text(encoding="utf-8")
+              anchor = "void loop() {\n"
+              if text.count(anchor) != 1:
+                  raise SystemExit(f"Expected one Arduino loop in {path}")
+              if "void loop() {\n  board.loop();\n" in text:
+                  continue
+              text = text.replace(anchor, anchor + "  board.loop();\n", 1)
+              path.write_text(text, encoding="utf-8")
+          PY
+
+          rm .github/workflows/apply-board-loop-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add examples .github/workflows/apply-board-loop-fix.yml
+          git commit -m "fix(heltec-v4): run board power policy in every application"
+          git push origin HEAD:feature/heltec-v4-power-parity
