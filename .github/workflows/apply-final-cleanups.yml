@@ -29,28 +29,22 @@ jobs:
 
           path = Path("variants/heltec_v4/HeltecV4Board.cpp")
           text = path.read_text(encoding="utf-8")
-          old = '''  if (fem_lna_nvs_explicit) {
-            // Once migrated, NVS is authoritative and keeps the JSON preference
-            // aligned for clients that still inspect the legacy field.
-            _prefs->setByKey("fem_rxgain", isLoRaFemLnaEnabled() ? "1" : "0");
-            return;
-          }
-          '''
-          new = '''  if (fem_lna_nvs_explicit) {
-            // Once migrated, NVS is authoritative. Only touch the legacy JSON
-            // field when it actually differs, avoiding an unnecessary flash save.
-            const char *desired_fem_rxgain = isLoRaFemLnaEnabled() ? "1" : "0";
-            char stored_fem_rxgain[8] = {};
-            if (!_prefs->getByKey("fem_rxgain", stored_fem_rxgain, sizeof(stored_fem_rxgain)) ||
-                strcmp(stored_fem_rxgain, desired_fem_rxgain) != 0) {
-              _prefs->setByKey("fem_rxgain", desired_fem_rxgain);
-            }
-            return;
-          }
-          '''
-          if text.count(old) != 1:
-              raise SystemExit("Expected NVS-authoritative FEM block was not found exactly once")
-          path.write_text(text.replace(old, new), encoding="utf-8")
+          start = text.index("  if (fem_lna_nvs_explicit) {\n")
+          end = text.index("\n\n  char legacy_fem_rxgain", start)
+          replacement = (
+              "  if (fem_lna_nvs_explicit) {\n"
+              "    // Once migrated, NVS is authoritative. Only touch the legacy JSON\n"
+              "    // field when it actually differs, avoiding an unnecessary flash save.\n"
+              "    const char *desired_fem_rxgain = isLoRaFemLnaEnabled() ? \"1\" : \"0\";\n"
+              "    char stored_fem_rxgain[8] = {};\n"
+              "    if (!_prefs->getByKey(\"fem_rxgain\", stored_fem_rxgain, sizeof(stored_fem_rxgain)) ||\n"
+              "        strcmp(stored_fem_rxgain, desired_fem_rxgain) != 0) {\n"
+              "      _prefs->setByKey(\"fem_rxgain\", desired_fem_rxgain);\n"
+              "    }\n"
+              "    return;\n"
+              "  }"
+          )
+          path.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
           PY
 
           rm .github/workflows/apply-final-cleanups.yml
