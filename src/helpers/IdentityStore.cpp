@@ -89,7 +89,8 @@ bool commitIdentityAtomically(FILESYSTEM *fs, const char *path, const mesh::Loca
   }
 
   mesh::LocalIdentity verified;
-  if (!loadIdentityFile(fs, temporary_path, verified) || !verified.matches(id)) {
+  if (!loadIdentityFile(fs, temporary_path, verified) || !verified.matches(id) ||
+      !meshcorePersistentWritesAllowed()) {
     fs->remove(temporary_path);
     return false;
   }
