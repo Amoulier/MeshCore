@@ -89,8 +89,17 @@ bool commitIdentityAtomically(FILESYSTEM *fs, const char *path, const mesh::Loca
   }
 
   mesh::LocalIdentity verified;
-  if (!loadIdentityFile(fs, temporary_path, verified) || !verified.matches(id) ||
-      !meshcorePersistentWritesAllowed()) {
+  bool key_pair_verified = loadIdentityFile(fs, temporary_path, verified) && verified.matches(id);
+  if (key_pair_verified) {
+    static const uint8_t verification_message[] = {
+      'M', 'e', 's', 'h', 'C', 'o', 'r', 'e', '-', 'i', 'd', 'e', 'n', 't', 'i', 't', 'y'
+    };
+    uint8_t verification_signature[SIGNATURE_SIZE] = {};
+    verified.sign(verification_signature, verification_message, sizeof(verification_message));
+    key_pair_verified = verified.verify(verification_signature, verification_message,
+                                        sizeof(verification_message));
+  }
+  if (!key_pair_verified || !meshcorePersistentWritesAllowed()) {
     fs->remove(temporary_path);
     return false;
   }

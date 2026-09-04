@@ -53,6 +53,7 @@ namespace {
 
 RTC_DATA_ATTR bool battery_critical_latched = false;
 volatile bool persistent_writes_allowed = true;
+bool fem_lna_nvs_explicit = false;
 
 constexpr const char *BOARD_PREFS_NAMESPACE = "meshcore_v4";
 constexpr const char *FEM_LNA_EXPLICIT_KEY = "fem_lna_set";
@@ -96,6 +97,25 @@ heltec_v4::PowerProfile configuredPowerProfile()
 #else
   return heltec_v4::PowerProfile::Standard;
 #endif
+}
+
+bool persistFemLnaPreference(bool enabled)
+{
+  if (!meshcorePersistentWritesAllowed()) {
+    return false;
+  }
+
+  Preferences preferences;
+  if (!preferences.begin(BOARD_PREFS_NAMESPACE, false)) {
+    return false;
+  }
+  // The explicit marker is the commit record: write the value first so
+  // an interrupted migration is retried rather than accepting a default.
+  const bool value_written = preferences.putBool(FEM_LNA_ENABLED_KEY, enabled) == sizeof(bool);
+  const bool marker_written = value_written &&
+                              preferences.putBool(FEM_LNA_EXPLICIT_KEY, true) == sizeof(bool);
+  preferences.end();
+  return marker_written;
 }
 
 } // namespace
@@ -277,9 +297,11 @@ void HeltecV4Board::begin()
 
   loRaFEMControl.init();
   bool enable_lna = true;
+  fem_lna_nvs_explicit = false;
   Preferences preferences;
   if (preferences.begin(BOARD_PREFS_NAMESPACE, true)) {
-    if (preferences.getBool(FEM_LNA_EXPLICIT_KEY, false)) {
+    fem_lna_nvs_explicit = preferences.getBool(FEM_LNA_EXPLICIT_KEY, false);
+    if (fem_lna_nvs_explicit) {
       enable_lna = preferences.getBool(FEM_LNA_ENABLED_KEY, true);
     }
     preferences.end();
@@ -452,9 +474,27 @@ bool HeltecV4Board::isLoRaFemLnaEnabled() const
 void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)
 {
   _prefs = prefs;
-  if (_prefs && loRaFEMControl.isLnaCanControl()) {
-    _prefs->setByKey("fem_rxgain", isLoRaFemLnaEnabled() ? "1" : "0");
+  if (!_prefs || !loRaFEMControl.isLnaCanControl()) {
+    return;
   }
+
+  if (fem_lna_nvs_explicit) {
+    // Once migrated, NVS is authoritative and keeps the JSON preference
+    // aligned for clients that still inspect the legacy field.
+    _prefs->setByKey("fem_rxgain", isLoRaFemLnaEnabled() ? "1" : "0");
+    return;
+  }
+
+  char legacy_fem_rxgain[8] = {};
+  if (!_prefs->getByKey("fem_rxgain", legacy_fem_rxgain, sizeof(legacy_fem_rxgain))) {
+    return;
+  }
+
+  // Fresh installs default this field to 1; upgraded installations can
+  // carry an explicit 0. Apply it before creating the new NVS marker.
+  const bool enable_lna = strcmp(legacy_fem_rxgain, "1") == 0;
+  setLoRaFemLnaEnabled(enable_lna);
+  fem_lna_nvs_explicit = persistFemLnaPreference(enable_lna);
 }
 
 bool HeltecV4Board::handleCommand(const char *command, uint32_t sender_timestamp, char *reply)
@@ -491,14 +531,7 @@ bool HeltecV4Board::handleCommand(const char *command, uint32_t sender_timestamp
     if (_prefs) {
       _prefs->setByKey("fem_rxgain", enable ? "1" : "0");
     }
-    if (meshcorePersistentWritesAllowed()) {
-      Preferences preferences;
-      if (preferences.begin(BOARD_PREFS_NAMESPACE, false)) {
-        preferences.putBool(FEM_LNA_EXPLICIT_KEY, true);
-        preferences.putBool(FEM_LNA_ENABLED_KEY, enable);
-        preferences.end();
-      }
-    }
+    fem_lna_nvs_explicit = persistFemLnaPreference(enable) || fem_lna_nvs_explicit;
     strcpy(reply, enable ? "OK - LoRa FEM RX gain on" : "OK - LoRa FEM RX gain off");
     return true;
   }
