@@ -1,0 +1,175 @@
+name: Heltec V4 Companion BLE validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/heltec-v4-companion-validation.yml
+      - .github/actions/setup-build-environment/**
+      - arch/esp32/**
+      - boards/heltec_v4.json
+      - examples/companion_radio/**
+      - merge-bin.py
+      - platformio.ini
+      - src/**
+      - variants/heltec_v4/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/heltec-v4-companion-validation.yml
+      - .github/actions/setup-build-environment/**
+      - arch/esp32/**
+      - boards/heltec_v4.json
+      - examples/companion_radio/**
+      - merge-bin.py
+      - platformio.ini
+      - src/**
+      - variants/heltec_v4/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: heltec-v4-companion-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and package Companion BLE
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Compile application and complete flash images
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="$(git rev-parse --short=8 HEAD)"
+          build_date="$(date -u '+%d-%b-%Y')"
+          firmware_version="companion-${short_sha}"
+          export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS:-} -DFIRMWARE_BUILD_DATE='\"${build_date}\"' -DFIRMWARE_VERSION='\"${firmware_version}\"'"
+
+          pio run -e heltec_v4_companion_radio_ble
+          pio run -e heltec_v4_companion_radio_ble -t mergebin
+
+          test -s .pio/build/heltec_v4_companion_radio_ble/firmware.bin
+          test -s .pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin
+
+      - name: Create installation package
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="$(git rev-parse --short=8 HEAD)"
+          package="meshcore-heltec-v4-companion-ble-${short_sha}"
+          mkdir -p out
+
+          cp .pio/build/heltec_v4_companion_radio_ble/firmware.bin \
+            "out/${package}-ota.bin"
+          cp .pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin \
+            "out/${package}-factory.bin"
+
+          (
+            cd out
+            sha256sum "${package}-ota.bin" "${package}-factory.bin" > SHA256SUMS.txt
+          )
+
+          cat > out/INSTALL.txt <<EOF
+          MeshCore Heltec V4 Companion BLE validation firmware
+          ====================================================
+
+          Commit: ${GITHUB_SHA}
+          Target: heltec_v4_companion_radio_ble
+          Hardware: Heltec WiFi LoRa 32 V4 OLED / V4.3 OLED
+
+          ${package}-factory.bin
+            Complete fresh-install image. Flash at address 0x0 on ESP32-S3.
+            This is the recommended file for the first installation.
+
+          ${package}-ota.bin
+            Application-only image for a compatible MeshCore OTA/update path.
+            Do not flash this file at address 0x0 as a fresh installation.
+
+          Validation warning
+          ------------------
+          This is a prerelease candidate. Physical RF-power, current-consumption,
+          prolonged BLE reconnection and identity-persistence validation remains
+          required before production or unattended deployment.
+
+          The current Companion BLE target retains the public test BLE PIN 123456.
+          EOF
+
+      - name: Upload Companion BLE package
+        uses: actions/upload-artifact@v7
+        with:
+          name: heltec-v4-companion-ble-${{ github.sha }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 90
+
+  release:
+    name: Publish Companion BLE prerelease
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Companion BLE package
+        uses: actions/download-artifact@v8
+        with:
+          name: heltec-v4-companion-ble-${{ github.sha }}
+          path: out
+
+      - name: Publish commit-specific prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA:0:8}"
+          tag="heltec-v4-companion-validation-${short_sha}"
+          title="Heltec V4 Companion BLE validation ${short_sha}"
+
+          cat > release-notes.md <<EOF
+          ## Heltec V4 Companion BLE validation candidate
+
+          This prerelease contains the Companion BLE firmware built from commit
+          \`${GITHUB_SHA}\` for the Heltec WiFi LoRa 32 V4 OLED family.
+
+          ### Files
+
+          - \`*-factory.bin\`: complete fresh-install image for ESP32-S3, flashed at address \`0x0\`.
+          - \`*-ota.bin\`: application-only image for a compatible MeshCore update path.
+          - \`SHA256SUMS.txt\`: integrity checksums.
+          - \`INSTALL.txt\`: installation and validation notes.
+
+          This remains validation firmware. The target currently uses the public
+          test BLE PIN \`123456\`. Do not treat it as a production credential.
+          EOF
+
+          if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${tag}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${title}" \
+              --notes-file release-notes.md \
+              --prerelease
+            gh release upload "${tag}" out/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${tag}" out/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --title "${title}" \
+              --notes-file release-notes.md \
+              --prerelease
+          fi
