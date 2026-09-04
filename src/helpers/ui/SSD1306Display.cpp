@@ -126,7 +126,6 @@ bool SSD1306Display::setPersistentlyDisabled(bool disabled)
 
   if (disabled) {
     turnOff();
-    powerDownPanel();
     return true;
   }
 
@@ -152,7 +151,7 @@ void SSD1306Display::turnOff()
   if (_initialized && _isOn) {
     display.ssd1306_command(SSD1306_DISPLAYOFF);
   }
-  _isOn = false;
+  powerDownPanel();
 }
 
 void SSD1306Display::clear()
