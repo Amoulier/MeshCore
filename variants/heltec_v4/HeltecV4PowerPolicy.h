@@ -97,20 +97,12 @@ inline uint8_t slewBatteryPercent(uint8_t reported_percent,
   if (reported_percent == target_percent || step_interval_millis == 0) {
     return target_percent;
   }
-
-  const uint32_t steps = elapsed_millis / step_interval_millis;
-  if (steps == 0) {
+  if (elapsed_millis < step_interval_millis) {
     return reported_percent;
   }
-
-  if (target_percent > reported_percent) {
-    const uint32_t candidate = static_cast<uint32_t>(reported_percent) + steps;
-    return candidate >= target_percent ? target_percent : static_cast<uint8_t>(candidate);
-  }
-
-  return steps >= static_cast<uint32_t>(reported_percent - target_percent)
-           ? target_percent
-           : static_cast<uint8_t>(reported_percent - steps);
+  return target_percent > reported_percent
+           ? static_cast<uint8_t>(reported_percent + 1)
+           : static_cast<uint8_t>(reported_percent - 1);
 }
 
 inline int8_t radioInputPowerForRequestedOutput(int8_t requested_output_dbm,
