@@ -53,9 +53,10 @@ TEST(HeltecV4BatteryPercent, SlewRejectsShortTransmitSags)
 {
   EXPECT_EQ(80, slewBatteryPercent(80, 45, 59999, 60000));
   EXPECT_EQ(79, slewBatteryPercent(80, 45, 60000, 60000));
-  EXPECT_EQ(75, slewBatteryPercent(80, 45, 300000, 60000));
+  EXPECT_EQ(79, slewBatteryPercent(80, 45, 300000, 60000));
+  EXPECT_EQ(79, slewBatteryPercent(80, 45, UINT32_MAX, 60000));
   EXPECT_EQ(81, slewBatteryPercent(80, 90, 60000, 60000));
-  EXPECT_EQ(90, slewBatteryPercent(80, 90, 600000, 60000));
+  EXPECT_EQ(81, slewBatteryPercent(80, 90, 600000, 60000));
 }
 
 TEST(HeltecV4RadioPower, MapsDesiredAntennaPowerToSafeSx1262Input)
@@ -83,7 +84,6 @@ TEST(HeltecV4RadioPower, CapsLegacyRadioInputByDetectedFem)
   EXPECT_EQ(22, gc1109EstimatedOutput(11));
   EXPECT_EQ(22, kct8103lEstimatedOutput(9));
   EXPECT_EQ(21, gc1109EstimatedOutput(10));
-  EXPECT_EQ(22, kct8103lEstimatedOutput(9));
 }
 
 int main(int argc, char **argv)
