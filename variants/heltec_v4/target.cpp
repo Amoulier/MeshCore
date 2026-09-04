@@ -24,7 +24,11 @@ EnvironmentSensorManager sensors;
 #endif
 
 #ifdef DISPLAY_CLASS
+#if defined(HELTEC_V4_KEEP_ACCESSORY_RAIL_ON) && HELTEC_V4_KEEP_ACCESSORY_RAIL_ON
+DISPLAY_CLASS display(NULL);
+#else
 DISPLAY_CLASS display(&board.periph_power);
+#endif
 MomentaryButton user_btn(PIN_USER_BTN, 1000, true);
 #endif
 
