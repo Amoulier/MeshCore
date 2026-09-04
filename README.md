@@ -72,6 +72,7 @@ The standard Companion, Repeater, Room Server, Sensor, Bridge, Terminal and KISS
 - OLED, VEXT, GPS, SX1262 and the external FEM are placed in their low-power states.
 - The node wakes only by timer every 60 seconds while recovering.
 - Normal boot resumes only after the battery reaches 3.65 V.
+- Every retained application calls the board-level periodic hook; CI rejects an application entry point that omits it, ensuring the solar monitor runs after boot as well as during early recovery.
 
 This profile is intentionally limited to the repeater application. Use a standard Companion target when continuous BLE, USB or Wi-Fi availability is required.
 
