@@ -564,8 +564,19 @@ public:
       return true;
     }
     if (c == KEY_ENTER && _page == HomePage::OLED_CONTROL) {
-      if (heltecV4GetDisplayDisabled() < 0) {
+      const int8_t persistent_disabled = heltecV4GetDisplayDisabled();
+      if (persistent_disabled < 0) {
         _task->showAlert("Display unsupported", 1000);
+      } else if (!display.isOn()) {
+        // A long press does not pass through checkDisplayOn(). If the normal
+        // inactivity timer blanked the OLED, consume this action by waking it
+        // instead of confirming a persistent shutdown on an unseen page.
+        if (persistent_disabled) {
+          heltecV4SetDisplayEnabled(true);
+        } else {
+          display.turnOn();
+        }
+        _task->showAlert(display.isOn() ? "Display on" : "Display wake failed", 1000);
       } else {
         _display_off_init = true;
         _task->showAlert("Release to turn off", 800);
