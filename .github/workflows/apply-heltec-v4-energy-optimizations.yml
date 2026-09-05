@@ -41,13 +41,15 @@ jobs:
           git diff --check
           test -n "$(git status --short)"
 
-      - name: Commit generated implementation
+      - name: Commit source implementation
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
+          git reset -- .github/workflows tools/apply_heltec_v4_energy_optimizations.py
+          test -n "$(git diff --cached --name-only)"
           git commit -m "feat: optimize Heltec V4 energy use and add low-power variants"
           git push origin HEAD:feature/heltec-v4-energy-optimization
 
