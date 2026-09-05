@@ -47,7 +47,7 @@ jobs:
       - name: Set up build environment
         uses: ./.github/actions/setup-build-environment
 
-      - name: Compile application and complete flash images
+      - name: Compile application and complete flash image
         shell: bash
         run: |
           set -euo pipefail
@@ -59,8 +59,16 @@ jobs:
           pio run -e heltec_v4_companion_radio_ble
           pio run -e heltec_v4_companion_radio_ble -t mergebin
 
-          test -s .pio/build/heltec_v4_companion_radio_ble/firmware.bin
-          test -s .pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin
+          app=.pio/build/heltec_v4_companion_radio_ble/firmware.bin
+          merged=.pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin
+          test -s "$app"
+          test -s "$merged"
+
+          # A complete ESP32-S3 image must contain an ESP image header at both
+          # 0x0 (bootloader) and 0x10000 (application). These assertions prevent
+          # publishing an application-only image as a complete image.
+          test "$(od -An -tx1 -N1 "$merged" | tr -d ' ')" = "e9"
+          test "$(od -An -tx1 -j65536 -N1 "$merged" | tr -d ' ')" = "e9"
 
       - name: Create installation package
         shell: bash
@@ -73,11 +81,11 @@ jobs:
           cp .pio/build/heltec_v4_companion_radio_ble/firmware.bin \
             "out/${package}-ota.bin"
           cp .pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin \
-            "out/${package}-factory.bin"
+            "out/${package}-merged.bin"
 
           (
             cd out
-            sha256sum "${package}-ota.bin" "${package}-factory.bin" > SHA256SUMS.txt
+            sha256sum "${package}-ota.bin" "${package}-merged.bin" > SHA256SUMS.txt
           )
 
           cat > out/INSTALL.txt <<EOF
@@ -88,9 +96,12 @@ jobs:
           Target: heltec_v4_companion_radio_ble
           Hardware: Heltec WiFi LoRa 32 V4 OLED / V4.3 OLED
 
-          ${package}-factory.bin
-            Complete fresh-install image. Flash at address 0x0 on ESP32-S3.
-            This is the recommended file for the first installation.
+          ${package}-merged.bin
+            Complete fresh-install image for ESP32-S3. Flash at address 0x0.
+            Keep the exact -merged.bin suffix. The MeshCore Custom Firmware
+            flasher uses this suffix to select address 0x0. Renaming a complete
+            image to another suffix can make the flasher write it at 0x10000 and
+            cause a boot loop.
 
           ${package}-ota.bin
             Application-only image for a compatible MeshCore OTA/update path.
@@ -159,10 +170,18 @@ jobs:
 
           ### Files
 
-          - \`*-factory.bin\`: complete fresh-install image for ESP32-S3, flashed at address \`0x0\`.
+          - \`*-merged.bin\`: complete ESP32-S3 image. Keep this exact suffix so
+            the MeshCore Custom Firmware flasher selects address \`0x0\`.
           - \`*-ota.bin\`: application-only image for a compatible MeshCore update path.
           - \`SHA256SUMS.txt\`: integrity checksums.
-          - \`INSTALL.txt\`: installation, pairing and OLED-control notes.
+          - \`INSTALL.txt\`: installation, pairing, recovery and OLED-control notes.
+
+          ### Critical flashing rule
+
+          Do not rename the complete image to \`*-factory.bin\`. The current
+          MeshCore Custom Firmware flasher recognizes a complete image by the
+          exact \`-merged.bin\` suffix. A different suffix is treated as an
+          application image and may be written at \`0x10000\`, causing a boot loop.
 
           ### Bluetooth PIN
 
@@ -198,5 +217,35 @@ jobs:
               --target "${GITHUB_SHA}" \
               --title "${title}" \
               --notes-file release-notes.md \
+              --prerelease
+          fi
+
+      - name: Retract incorrectly named 5ce832a5 complete image
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          old_tag="heltec-v4-companion-validation-5ce832a5"
+          old_asset="meshcore-heltec-v4-companion-ble-5ce832a5-factory.bin"
+          if gh release view "$old_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete-asset "$old_tag" "$old_asset" \
+              --repo "$GITHUB_REPOSITORY" --yes || true
+            cat > retracted-notes.md <<'EOF'
+          # RETRACTED: do not use Custom Firmware with the removed factory asset
+
+          The complete image in this release was correctly built but incorrectly
+          named with a `-factory.bin` suffix. The MeshCore Custom Firmware flasher
+          only selects address `0x0` for files ending in `-merged.bin`; therefore,
+          it could write that complete image at `0x10000` and cause a boot loop.
+
+          Use a newer release containing a file whose name ends exactly in
+          `-merged.bin`. The application-only OTA asset remains for compatible OTA
+          paths, but this release is retained only as an incident record.
+          EOF
+            gh release edit "$old_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "RETRACTED — Heltec V4 Companion BLE 5ce832a5" \
+              --notes-file retracted-notes.md \
               --prerelease
           fi
