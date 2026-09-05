@@ -1,0 +1,68 @@
+name: Fix Heltec V4 OLED restore timer v2
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-on-device-display-control
+    paths:
+      - .github/workflows/fix-heltec-v4-display-restore-timer-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+
+      - name: Move restore-edge handling after button processing
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("examples/companion_radio/ui-new/UITask.cpp")
+          text = path.read_text(encoding="utf-8")
+
+          old_top = "void UITask::loop() {\n  // Persistent restore happens inside the button layer and emits no UI key.\n  // Detect the off-to-on edge so the OLED refreshes and gets a full timeout.\n  static bool display_was_on = false;\n  if (_display != NULL) {\n    const bool display_is_on = _display->isOn();\n    if (display_is_on && !display_was_on) {\n      _auto_off = millis() + AUTO_OFF_MILLIS;\n      _next_refresh = 0;\n    }\n    display_was_on = display_is_on;\n  }\n\n  char c = 0;"
+          new_top = "void UITask::loop() {\n  static bool display_was_on = false;\n  char c = 0;"
+
+          old_late = "  if (curr) curr->poll();\n\n  if (_display != NULL && _display->isOn()) {"
+          new_late = "  if (curr) curr->poll();\n\n  // Persistent restore happens inside the button layer and emits no UI key.\n  // Check after input processing so a restored OLED gets a fresh frame and a\n  // full timeout before the auto-off test runs in this same loop iteration.\n  if (_display != NULL) {\n    const bool display_is_on = _display->isOn();\n    if (display_is_on && !display_was_on) {\n      _auto_off = millis() + AUTO_OFF_MILLIS;\n      _next_refresh = 0;\n    }\n    display_was_on = display_is_on;\n  }\n\n  if (_display != NULL && _display->isOn()) {"
+
+          if new_late not in text:
+              if text.count(old_top) != 1:
+                  raise RuntimeError(f"Expected one old top block, found {text.count(old_top)}")
+              if text.count(old_late) != 1:
+                  raise RuntimeError(f"Expected one insertion point, found {text.count(old_late)}")
+              text = text.replace(old_top, new_top, 1)
+              text = text.replace(old_late, new_late, 1)
+              path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("examples/companion_radio/ui-new/UITask.cpp").read_text(encoding="utf-8")
+          input_pos = text.index("int ev = user_btn.check();")
+          restore_pos = text.index("if (display_is_on && !display_was_on)")
+          auto_off_pos = text.index("if (millis() > _auto_off)")
+          assert input_pos < restore_pos < auto_off_pos
+          assert text.count("if (display_is_on && !display_was_on)") == 1
+          PY
+
+      - name: Commit correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add examples/companion_radio/ui-new/UITask.cpp
+          git commit -m "fix(heltec-v4): keep restored OLED awake for a full interval"
+          git push
