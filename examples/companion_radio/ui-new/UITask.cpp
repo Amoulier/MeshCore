@@ -536,6 +536,8 @@ public:
     return 5000;   // next render after 5000 ms
   }
 
+  bool isDisplayPage() const { return _page == HomePage::DISPLAY; }
+
   bool handleInput(char c) override {
     if (c == KEY_LEFT || c == KEY_PREV) {
       _page = (_page + HomePage::Count - 1) % HomePage::Count;
@@ -1056,9 +1058,13 @@ char UITask::checkDisplayOn(char c) {
 }
 
 char UITask::handleLongPress(char c) {
-  if (millis() - ui_started_at < 8000) {   // long press in first 8 seconds since startup -> CLI/rescue
+  const bool display_menu_action = curr == home &&
+      static_cast<HomeScreen *>(home)->isDisplayPage();
+  if (millis() - ui_started_at < 8000 && !display_menu_action) {
+    // Preserve the startup CLI/rescue gesture everywhere except the explicit
+    // OLED menu, where the selected local action takes precedence.
     the_mesh.enterCLIRescue();
-    c = 0;   // consume event
+    c = 0;
   }
   return c;
 }
