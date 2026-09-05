@@ -27,7 +27,7 @@ jobs:
           if "HomePage::OLED_CONTROL" not in text:
               if text.count("    DISPLAY,\n") != 1:
                   raise RuntimeError(f"DISPLAY enum count: {text.count('    DISPLAY,')}")
-              if text.count("HomePage::DISPLAY") != 4:
+              if text.count("HomePage::DISPLAY") != 3:
                   raise RuntimeError(f"HomePage::DISPLAY reference count: {text.count('HomePage::DISPLAY')}")
               text = text.replace("    DISPLAY,\n", "    OLED_CONTROL,\n", 1)
               text = text.replace("HomePage::DISPLAY", "HomePage::OLED_CONTROL")
@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           git diff --check
           test "$(grep -Ec '^    OLED_CONTROL,$' examples/companion_radio/ui-new/UITask.cpp)" -eq 1
-          test "$(grep -c 'HomePage::OLED_CONTROL' examples/companion_radio/ui-new/UITask.cpp)" -eq 4
+          test "$(grep -c 'HomePage::OLED_CONTROL' examples/companion_radio/ui-new/UITask.cpp)" -eq 3
           test "$(grep -c 'HomePage::DISPLAY' examples/companion_radio/ui-new/UITask.cpp || true)" -eq 0
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
