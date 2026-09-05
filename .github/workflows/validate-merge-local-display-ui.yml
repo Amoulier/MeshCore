@@ -1,0 +1,82 @@
+name: Validate and merge Heltec V4 local OLED menu
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-local-display-ui
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate-and-merge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out implementation branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/heltec-v4-local-display-ui
+          fetch-depth: 0
+
+      - name: Verify local UI behavior is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .github/workflows/apply-local-display-ui.yml
+          grep -q '^    DISPLAY,$' examples/companion_radio/ui-new/UITask.cpp
+          grep -q 'HomePage::DISPLAY' examples/companion_radio/ui-new/UITask.cpp
+          grep -q 'board.handleCommand("set display off"' examples/companion_radio/ui-new/UITask.cpp
+          grep -q 'Local OLED control' README.md
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Run native tests
+        run: pio test -e native -e native_kiss_modem -vv
+
+      - name: Compile all retained Heltec V4 targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            heltec_v4_repeater
+            heltec_v4_solar_repeater
+            heltec_v4_expansionkit_repeater
+            heltec_v4_repeater_bridge_espnow
+            heltec_v4_room_server
+            heltec_v4_terminal_chat
+            heltec_v4_companion_radio_usb
+            heltec_v4_companion_radio_ble
+            heltec_v4_companion_radio_wifi
+            heltec_v4_sensor
+            heltec_v4_kiss_modem
+          )
+          for target in "${targets[@]}"; do
+            pio run -e "${target}"
+          done
+
+      - name: Remove temporary validation workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/validate-merge-local-display-ui.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(ci): remove local OLED staging workflow'
+          git push origin HEAD:feature/heltec-v4-local-display-ui
+
+      - name: Squash merge validated pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr_number="$(gh pr list --repo "${GITHUB_REPOSITORY}" --head feature/heltec-v4-local-display-ui --base main --state open --json number --jq '.[0].number')"
+          test -n "${pr_number}"
+          gh pr merge "${pr_number}" --repo "${GITHUB_REPOSITORY}" --squash --delete-branch \
+            --subject 'feat(companion): add local persistent OLED control' \
+            --body 'Add a physical Display page to the Heltec V4 Companion UI. Short PRG presses navigate to it; a long press disables the OLED persistently, and a long press while off restores it. Bluetooth and LoRa remain active.'

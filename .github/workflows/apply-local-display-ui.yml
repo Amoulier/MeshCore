@@ -1,0 +1,105 @@
+name: Apply Heltec V4 local OLED menu
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-local-display-ui
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out implementation branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/heltec-v4-local-display-ui
+
+      - name: Add local persistent-display control
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          ui_path = Path('examples/companion_radio/ui-new/UITask.cpp')
+          ui = ui_path.read_text()
+
+          enum_old = '    BLUETOOTH,\n    ADVERT,'
+          enum_new = '    BLUETOOTH,\n    DISPLAY,\n    ADVERT,'
+          if enum_old not in ui:
+              raise SystemExit('HomePage enum anchor not found')
+          ui = ui.replace(enum_old, enum_new, 1)
+
+          render_anchor = '    } else if (_page == HomePage::ADVERT) {'
+          render_block = '''    } else if (_page == HomePage::DISPLAY) {
+            display.setColor(UIColor::primary_txt);
+            display.setTextSize(2);
+            display.drawTextCentered(display.width() / 2, 22, "OLED ON");
+            display.setColor(UIColor::secondary_txt);
+            display.setTextSize(1);
+            display.drawTextCentered(display.width() / 2, 53, "turn off: " PRESS_LABEL);
+          } else if (_page == HomePage::ADVERT) {'''
+          if render_anchor not in ui:
+              raise SystemExit('Display render anchor not found')
+          ui = ui.replace(render_anchor, render_block, 1)
+
+          input_anchor = '    if (c == KEY_ENTER && _page == HomePage::BLUETOOTH) {'
+          input_block = '''    if (c == KEY_ENTER && _page == HomePage::DISPLAY) {
+            char reply[80] = {};
+            if (!board.handleCommand("set display off", 0, reply) || strncmp(reply, "OK", 2) != 0) {
+              _task->showAlert("Display error", 800);
+            }
+            return true;
+          }
+          ''' + input_anchor
+          if input_anchor not in ui:
+              raise SystemExit('Display input anchor not found')
+          ui = ui.replace(input_anchor, input_block, 1)
+          ui_path.write_text(ui)
+
+          readme_path = Path('README.md')
+          readme = readme_path.read_text()
+          build_anchor = '\n## Building\n'
+          local_docs = '''
+### Local OLED control
+
+On Companion OLED firmware, use short PRG presses to cycle to the **Display** page. While that page is visible, hold PRG for about one second to disable the OLED persistently. This action is performed entirely on the node and does not require the phone app or a computer.
+
+While persistently disabled, incoming messages and ordinary button presses do not wake the OLED. Hold PRG for about one second while the screen is off to restore it. The existing CLI commands remain available as an alternative.
+'''
+          if build_anchor not in readme:
+              raise SystemExit('README build anchor not found')
+          readme = readme.replace(build_anchor, '\n' + local_docs + build_anchor, 1)
+          readme_path.write_text(readme)
+
+          ci_path = Path('.github/workflows/heltec-v4-ci.yml')
+          ci = ci_path.read_text()
+          ci_anchor = '          done\n\n  unit-tests:'
+          ci_checks = '''          done
+
+          grep -q '^    DISPLAY,$' examples/companion_radio/ui-new/UITask.cpp
+          grep -q 'HomePage::DISPLAY' examples/companion_radio/ui-new/UITask.cpp
+          grep -q 'board.handleCommand("set display off"' examples/companion_radio/ui-new/UITask.cpp
+
+  unit-tests:'''
+          if ci_anchor not in ci:
+              raise SystemExit('CI audit anchor not found')
+          ci = ci.replace(ci_anchor, ci_checks, 1)
+          ci_path.write_text(ci)
+
+          Path('.github/workflows/apply-local-display-ui.yml').unlink()
+          PY
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat(companion): add local persistent OLED control'
+          git push origin HEAD:feature/heltec-v4-local-display-ui
