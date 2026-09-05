@@ -21,6 +21,7 @@ class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLE
   unsigned long adv_restart_time;
   unsigned long fast_adv_until;
   unsigned long last_activity_time;
+  unsigned long disconnected_since;
   bool advertising_fast;
   bool peer_address_valid;
   bool connection_profile_known;
@@ -70,6 +71,7 @@ public:
     adv_restart_time = 0;
     fast_adv_until = 0;
     last_activity_time = 0;
+    disconnected_since = 0;
     advertising_fast = false;
     peer_address_valid = false;
     connection_profile_known = false;
