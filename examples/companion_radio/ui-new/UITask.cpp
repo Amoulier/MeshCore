@@ -92,7 +92,7 @@ class HomeScreen : public UIScreen {
     RECENT,
     RADIO,
     BLUETOOTH,
-    DISPLAY,
+    OLED_CONTROL,
     ADVERT,
 #if ENV_INCLUDE_GPS == 1
     GPS,
@@ -348,7 +348,7 @@ public:
       display.setColor(UIColor::secondary_txt);
       display.setTextSize(1);
       display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
-    } else if (_page == HomePage::DISPLAY) {
+    } else if (_page == HomePage::OLED_CONTROL) {
       display.setColor(UIColor::primary_txt);
       display.setTextSize(2);
       display.drawTextCentered(display.width() / 2, 22, "OLED: ON");
@@ -536,7 +536,7 @@ public:
     return 5000;   // next render after 5000 ms
   }
 
-  bool isDisplayPage() const { return _page == HomePage::DISPLAY; }
+  bool isDisplayPage() const { return _page == HomePage::OLED_CONTROL; }
 
   bool handleInput(char c) override {
     if (c == KEY_LEFT || c == KEY_PREV) {
@@ -563,7 +563,7 @@ public:
       }
       return true;
     }
-    if (c == KEY_ENTER && _page == HomePage::DISPLAY) {
+    if (c == KEY_ENTER && _page == HomePage::OLED_CONTROL) {
       if (heltecV4GetDisplayDisabled() < 0) {
         _task->showAlert("Display unsupported", 1000);
       } else {
