@@ -107,6 +107,18 @@ void SerialBLEInterface::requestConnectionProfile(bool idle)
 void SerialBLEInterface::updatePowerPolicy()
 {
   const unsigned long now = millis();
+
+#if defined(HELTEC_V4_BLE_AUTO_OFF_MSEC) && HELTEC_V4_BLE_AUTO_OFF_MSEC > 0
+  // The explicit low-power Companion trades unattended discoverability for
+  // lower draw. Bluetooth can be restored locally from the node's Bluetooth
+  // page with a long PRG press; the standard BLE target never auto-disables.
+  if (_isEnabled && pServer->getConnectedCount() == 0 && disconnected_since &&
+      static_cast<uint32_t>(now - disconnected_since) >= HELTEC_V4_BLE_AUTO_OFF_MSEC) {
+    disable();
+    return;
+  }
+#endif
+
   if (!deviceConnected && advertising_fast && fast_adv_until &&
       static_cast<long>(now - fast_adv_until) >= 0) {
     startAdvertising(false);
@@ -145,10 +157,12 @@ void SerialBLEInterface::onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl)
   if (cmpl.success) {
     BLE_DEBUG_PRINTLN("Authentication Success");
     deviceConnected = true;
+    disconnected_since = 0;
     connection_profile_known = false;
     markActivity();
   } else {
     BLE_DEBUG_PRINTLN("Authentication Failure");
+    disconnected_since = millis();
     pServer->disconnect(pServer->getConnId());
     adv_restart_time = millis() + ADVERT_RESTART_DELAY;
   }
@@ -157,6 +171,7 @@ void SerialBLEInterface::onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl)
 void SerialBLEInterface::onConnect(BLEServer *pServer)
 {
   (void)pServer;
+  disconnected_since = 0;
 }
 
 void SerialBLEInterface::onConnect(BLEServer *pServer, esp_ble_gatts_cb_param_t *param)
@@ -166,6 +181,7 @@ void SerialBLEInterface::onConnect(BLEServer *pServer, esp_ble_gatts_cb_param_t 
   last_conn_id = param->connect.conn_id;
   memcpy(peer_address, param->connect.remote_bda, ESP_BD_ADDR_LEN);
   peer_address_valid = true;
+  disconnected_since = 0;
   connection_profile_known = false;
   last_activity_time = millis();
 }
@@ -183,6 +199,7 @@ void SerialBLEInterface::onDisconnect(BLEServer *pServer)
   deviceConnected = false;
   peer_address_valid = false;
   connection_profile_known = false;
+  disconnected_since = millis();
   if (_isEnabled) adv_restart_time = millis() + ADVERT_RESTART_DELAY;
 }
 
@@ -217,6 +234,7 @@ void SerialBLEInterface::enable()
 {
   if (_isEnabled) return;
   _isEnabled = true;
+  disconnected_since = millis();
   clearBuffers();
   pService->start();
   startAdvertising(true);
@@ -232,6 +250,7 @@ void SerialBLEInterface::disable()
   oldDeviceConnected = deviceConnected = false;
   peer_address_valid = false;
   connection_profile_known = false;
+  disconnected_since = 0;
   adv_restart_time = fast_adv_until = 0;
 }
 
@@ -284,9 +303,11 @@ size_t SerialBLEInterface::checkRecvFrame(uint8_t dest[])
   if (deviceConnected != oldDeviceConnected) {
     if (!deviceConnected) {
       clearBuffers();
+      disconnected_since = millis();
       adv_restart_time = millis() + ADVERT_RESTART_DELAY;
     } else {
       pServer->getAdvertising()->stop();
+      disconnected_since = 0;
       adv_restart_time = fast_adv_until = 0;
       requestConnectionProfile(false);
     }
