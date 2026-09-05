@@ -1,0 +1,57 @@
+name: Apply Heltec V4 energy optimizations
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-energy-optimization
+    paths:
+      - tools/apply_heltec_v4_energy_optimizations.py
+      - .github/workflows/apply-heltec-v4-energy-optimizations.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-heltec-v4-energy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out implementation branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/heltec-v4-energy-optimization
+          fetch-depth: 0
+
+      - name: Apply deterministic source transformation
+        run: python tools/apply_heltec_v4_energy_optimizations.py
+
+      - name: Verify generated patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -n "$(git status --short)"
+
+      - name: Commit generated implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: optimize Heltec V4 energy use and add low-power variants"
+          git push origin HEAD:feature/heltec-v4-energy-optimization
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Run native tests
+        run: pio test -e native -e native_kiss_modem -vv
+
+      - name: Build all Heltec V4 firmware variants
+        run: ./build.sh
