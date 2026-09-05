@@ -2,12 +2,18 @@ name: Heltec V4 Energy Release
 
 on:
   push:
-    tags:
-      - "heltec-v4-energy-v*"
+    branches:
+      - main
+    paths:
+      - .github/release/heltec-v4-energy-version.txt
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: heltec-v4-energy-release
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -35,8 +41,17 @@ jobs:
           - heltec_v4_kiss_modem
 
     steps:
-      - name: Check out tagged source
+      - name: Check out release source
         uses: actions/checkout@v6
+
+      - name: Read and validate release tag
+        id: release_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="$(tr -d '[:space:]' < .github/release/heltec-v4-energy-version.txt)"
+          [[ "${release_tag}" =~ ^heltec-v4-energy-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+          echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up build environment
         uses: ./.github/actions/setup-build-environment
@@ -45,14 +60,14 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ matrix.environment }}
+          RELEASE_TAG: ${{ steps.release_meta.outputs.release_tag }}
         run: |
           set -euo pipefail
 
           short_sha="$(git rev-parse --short=8 HEAD)"
           build_commit="$(git rev-parse HEAD)"
           build_date="$(date -u '+%d-%b-%Y')"
-          release_version="${GITHUB_REF_NAME}"
-          firmware_version="${release_version}-${short_sha}"
+          firmware_version="${RELEASE_TAG}-${short_sha}"
           export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS:-} -DFIRMWARE_BUILD_DATE='\"${build_date}\"' -DFIRMWARE_VERSION='\"${firmware_version}\"'"
 
           pio run -e "${TARGET}"
@@ -75,7 +90,7 @@ jobs:
           PY
 
           mkdir -p out
-          base="${TARGET}-${release_version}-${short_sha}"
+          base="${TARGET}-${RELEASE_TAG}-${short_sha}"
           ota="out/${base}-ota.bin"
           merged="out/${base}-merged.bin"
           manifest="out/${base}.json"
@@ -85,7 +100,7 @@ jobs:
           cp "${app_source}" "${ota}"
           cp "${merged_source}" "${merged}"
 
-          python - "${manifest}" "${TARGET}" "${release_version}" "${firmware_version}" "${build_commit}" "${build_date}" "$(basename "${ota}")" "$(basename "${merged}")" <<'PY'
+          python - "${manifest}" "${TARGET}" "${RELEASE_TAG}" "${firmware_version}" "${build_commit}" "${build_date}" "$(basename "${ota}")" "$(basename "${merged}")" <<'PY'
           import json
           from pathlib import Path
           import sys
@@ -109,7 +124,7 @@ jobs:
           cat > "${notes}" <<EOF
           Hardware: Heltec WiFi LoRa 32 V4 OLED
           Target: ${TARGET}
-          Release: ${release_version}
+          Release: ${RELEASE_TAG}
           Firmware version: ${firmware_version}
           Commit: ${build_commit}
           Build date (UTC): ${build_date}
@@ -144,8 +159,17 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Check out tagged source
+      - name: Check out release source
         uses: actions/checkout@v6
+
+      - name: Read and validate release tag
+        id: release_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="$(tr -d '[:space:]' < .github/release/heltec-v4-energy-version.txt)"
+          [[ "${release_tag}" =~ ^heltec-v4-energy-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+          echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
 
       - name: Download all target packages
         uses: actions/download-artifact@v8
@@ -155,6 +179,8 @@ jobs:
 
       - name: Verify inventory and create aggregate package
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release_meta.outputs.release_tag }}
         run: |
           set -euo pipefail
 
@@ -211,7 +237,7 @@ jobs:
               | xargs sha256sum > SHA256SUMS.txt
           )
 
-          archive="MeshCore-Heltec-V4-all-variants-${GITHUB_REF_NAME}.zip"
+          archive="MeshCore-Heltec-V4-all-variants-${RELEASE_TAG}.zip"
           (
             cd out
             zip -9 "${archive}" ./*
@@ -221,8 +247,9 @@ jobs:
       - name: Publish prerelease
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "MeshCore Heltec V4 Energy Optimization ${{ github.ref_name }}"
+          tag_name: ${{ steps.release_meta.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: "MeshCore Heltec V4 Energy Optimization ${{ steps.release_meta.outputs.release_tag }}"
           prerelease: true
           draft: false
           make_latest: false
