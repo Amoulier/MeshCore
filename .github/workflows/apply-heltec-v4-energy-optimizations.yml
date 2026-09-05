@@ -1,63 +1,61 @@
-name: Apply Heltec V4 energy optimizations
+name: Heltec V4 Energy Branch Validation
 
 on:
   push:
     branches:
       - feature/heltec-v4-energy-optimization
-    paths:
-      - tools/apply_heltec_v4_energy_optimizations.py
-      - tools/repair_energy_transform.py
-      - .github/workflows/apply-heltec-v4-energy-optimizations.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: apply-heltec-v4-energy-${{ github.ref }}
-  cancel-in-progress: false
+  group: heltec-v4-energy-validation-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  apply:
+  native-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
     steps:
-      - name: Check out implementation branch
-        uses: actions/checkout@v6
-        with:
-          ref: feature/heltec-v4-energy-optimization
-          fetch-depth: 0
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-build-environment
+      - run: pio test -e native -e native_kiss_modem -vv
 
-      - name: Repair transform anchors
-        run: python tools/repair_energy_transform.py
-
-      - name: Apply deterministic source transformation
-        run: python tools/apply_heltec_v4_energy_optimizations.py
-
-      - name: Verify generated patch
+  build:
+    name: Build ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - heltec_v4_repeater
+          - heltec_v4_solar_repeater
+          - heltec_v4_solar_repeater_headless
+          - heltec_v4_expansionkit_repeater
+          - heltec_v4_repeater_bridge_espnow
+          - heltec_v4_repeater_bridge_espnow_low_power
+          - heltec_v4_room_server
+          - heltec_v4_terminal_chat
+          - heltec_v4_companion_radio_usb
+          - heltec_v4_companion_radio_ble
+          - heltec_v4_companion_radio_ble_low_power
+          - heltec_v4_companion_radio_wifi
+          - heltec_v4_companion_radio_wifi_low_power
+          - heltec_v4_sensor
+          - heltec_v4_sensor_low_power
+          - heltec_v4_kiss_modem
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-build-environment
+      - name: Build application and complete image
         shell: bash
+        env:
+          TARGET: ${{ matrix.environment }}
         run: |
           set -euo pipefail
-          git diff --check
-          test -n "$(git status --short)"
-
-      - name: Commit source implementation
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git reset -- .github/workflows tools/apply_heltec_v4_energy_optimizations.py
-          test -n "$(git diff --cached --name-only)"
-          git commit -m "feat: optimize Heltec V4 energy use and add low-power variants"
-          git push origin HEAD:feature/heltec-v4-energy-optimization
-
-      - name: Set up build environment
-        uses: ./.github/actions/setup-build-environment
-
-      - name: Run native tests
-        run: pio test -e native -e native_kiss_modem -vv
-
-      - name: Build all Heltec V4 firmware variants
-        run: ./build.sh
+          pio run -e "${TARGET}"
+          pio run -e "${TARGET}" -t mergebin
+          test -s ".pio/build/${TARGET}/firmware.bin"
+          test -s ".pio/build/${TARGET}/firmware-merged.bin"
