@@ -92,6 +92,7 @@ class HomeScreen : public UIScreen {
     RECENT,
     RADIO,
     BLUETOOTH,
+    DISPLAY,
     ADVERT,
 #if ENV_INCLUDE_GPS == 1
     GPS,
@@ -113,6 +114,7 @@ class HomeScreen : public UIScreen {
   SensorManager* _sensors;
   NodePrefs* _node_prefs;
   uint8_t _page;
+  bool _display_off_init;
   bool _shutdown_init;
   AdvertPath recent[UI_RECENT_LIST_SIZE];
 #if !(defined(UI_NO_DISCOVER_SCREEN) && (UI_NO_DISCOVER_SCREEN + 0 != 0))
@@ -207,9 +209,15 @@ class HomeScreen : public UIScreen {
 public:
   HomeScreen(UITask* task, mesh::RTCClock* rtc, SensorManager* sensors, NodePrefs* node_prefs)
      : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0),
-       _shutdown_init(false), sensors_lpp(200) {  }
+       _display_off_init(false), _shutdown_init(false), sensors_lpp(200) {  }
 
   void poll() override {
+    if (_display_off_init && !_task->isButtonPressed()) {
+      _display_off_init = false;
+      if (!heltecV4SetDisplayEnabled(false)) {
+        _task->showAlert("Display control failed", 1000);
+      }
+    }
     if (_shutdown_init && !_task->isButtonPressed()) {  // must wait for USR button to be released
       _task->shutdown();
     }
@@ -340,6 +348,16 @@ public:
       display.setColor(UIColor::secondary_txt);
       display.setTextSize(1);
       display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+    } else if (_page == HomePage::DISPLAY) {
+      display.setColor(UIColor::primary_txt);
+      display.setTextSize(2);
+      display.drawTextCentered(display.width() / 2, 22, "OLED: ON");
+      display.setColor(_display_off_init ? UIColor::warning_txt : UIColor::secondary_txt);
+      display.setTextSize(1);
+      display.drawTextCentered(display.width() / 2, 43,
+          _display_off_init ? "release: turn off" : "turn off: long press");
+      display.setColor(UIColor::secondary_txt);
+      display.drawTextCentered(display.width() / 2, 54, "restore: long press");
     } else if (_page == HomePage::ADVERT) {
       display.setColor(UIColor::corp_blue);
       display.drawXbm((display.width() - 32) / 2, 18, advert_icon, 32, 32);
@@ -540,6 +558,15 @@ public:
         _task->disableBluetooth();
       } else {
         _task->enableBluetooth();
+      }
+      return true;
+    }
+    if (c == KEY_ENTER && _page == HomePage::DISPLAY) {
+      if (heltecV4GetDisplayDisabled() < 0) {
+        _task->showAlert("Display unsupported", 1000);
+      } else {
+        _display_off_init = true;
+        _task->showAlert("Release to turn off", 800);
       }
       return true;
     }
@@ -843,6 +870,18 @@ bool UITask::isButtonPressed() const {
 }
 
 void UITask::loop() {
+  // Persistent restore happens inside the button layer and emits no UI key.
+  // Detect the off-to-on edge so the OLED refreshes and gets a full timeout.
+  static bool display_was_on = false;
+  if (_display != NULL) {
+    const bool display_is_on = _display->isOn();
+    if (display_is_on && !display_was_on) {
+      _auto_off = millis() + AUTO_OFF_MILLIS;
+      _next_refresh = 0;
+    }
+    display_was_on = display_is_on;
+  }
+
   char c = 0;
 #if UI_HAS_JOYSTICK
   int ev = user_btn.check();
