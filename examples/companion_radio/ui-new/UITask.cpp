@@ -870,18 +870,7 @@ bool UITask::isButtonPressed() const {
 }
 
 void UITask::loop() {
-  // Persistent restore happens inside the button layer and emits no UI key.
-  // Detect the off-to-on edge so the OLED refreshes and gets a full timeout.
   static bool display_was_on = false;
-  if (_display != NULL) {
-    const bool display_is_on = _display->isOn();
-    if (display_is_on && !display_was_on) {
-      _auto_off = millis() + AUTO_OFF_MILLIS;
-      _next_refresh = 0;
-    }
-    display_was_on = display_is_on;
-  }
-
   char c = 0;
 #if UI_HAS_JOYSTICK
   int ev = user_btn.check();
@@ -980,6 +969,18 @@ void UITask::loop() {
 #endif
 
   if (curr) curr->poll();
+
+  // Persistent restore happens inside the button layer and emits no UI key.
+  // Check after input processing so a restored OLED gets a fresh frame and a
+  // full timeout before the auto-off test runs in this same loop iteration.
+  if (_display != NULL) {
+    const bool display_is_on = _display->isOn();
+    if (display_is_on && !display_was_on) {
+      _auto_off = millis() + AUTO_OFF_MILLIS;
+      _next_refresh = 0;
+    }
+    display_was_on = display_is_on;
+  }
 
   if (_display != NULL && _display->isOn()) {
     if (millis() >= _next_refresh && curr) {
