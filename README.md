@@ -93,6 +93,17 @@ set display on
 
 `get power.status` reports raw millivolts, the filtered percentage and the active Standard/Solar profile. `get radio.power` reports requested SX1262 input, the value actually applied after the FEM limit, and estimated antenna output. After `set display off`, messages and ordinary button presses do not wake the OLED; hold PRG for about one second to restore it.
 
+### On-device OLED control
+
+The Heltec V4 Companion no longer requires a computer or a client-side CLI to disable the screen persistently:
+
+1. Short-press PRG to move through the home pages until `OLED: ON` appears.
+2. Hold PRG for about one second.
+3. Release PRG when the screen requests it; the OLED and its rail turn off and the preference is saved.
+4. To restore the OLED at any time, hold PRG again for about one second.
+
+Turning off the OLED does not disable Bluetooth or LoRa. Incoming messages continue to be received without waking the screen. The restored display receives a new auto-off interval instead of switching off immediately.
+
 ## Building
 
 Install PlatformIO, clone the repository, and select an explicit environment:

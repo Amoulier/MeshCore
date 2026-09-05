@@ -92,6 +92,7 @@ class HomeScreen : public UIScreen {
     RECENT,
     RADIO,
     BLUETOOTH,
+    OLED_CONTROL,
     ADVERT,
 #if ENV_INCLUDE_GPS == 1
     GPS,
@@ -113,6 +114,7 @@ class HomeScreen : public UIScreen {
   SensorManager* _sensors;
   NodePrefs* _node_prefs;
   uint8_t _page;
+  bool _display_off_init;
   bool _shutdown_init;
   AdvertPath recent[UI_RECENT_LIST_SIZE];
 #if !(defined(UI_NO_DISCOVER_SCREEN) && (UI_NO_DISCOVER_SCREEN + 0 != 0))
@@ -207,7 +209,16 @@ class HomeScreen : public UIScreen {
 public:
   HomeScreen(UITask* task, mesh::RTCClock* rtc, SensorManager* sensors, NodePrefs* node_prefs)
      : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0),
-       _shutdown_init(false), sensors_lpp(200) {  }
+       _display_off_init(false), _shutdown_init(false), sensors_lpp(200) {  }
+
+  void processDisplayOffRelease() {
+    if (_display_off_init && !_task->isButtonPressed()) {
+      _display_off_init = false;
+      if (!heltecV4SetDisplayEnabled(false)) {
+        _task->showAlert("Display control failed", 1000);
+      }
+    }
+  }
 
   void poll() override {
     if (_shutdown_init && !_task->isButtonPressed()) {  // must wait for USR button to be released
@@ -340,6 +351,16 @@ public:
       display.setColor(UIColor::secondary_txt);
       display.setTextSize(1);
       display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+    } else if (_page == HomePage::OLED_CONTROL) {
+      display.setColor(UIColor::primary_txt);
+      display.setTextSize(2);
+      display.drawTextCentered(display.width() / 2, 22, "OLED: ON");
+      display.setColor(_display_off_init ? UIColor::warning_txt : UIColor::secondary_txt);
+      display.setTextSize(1);
+      display.drawTextCentered(display.width() / 2, 43,
+          _display_off_init ? "release: turn off" : "turn off: long press");
+      display.setColor(UIColor::secondary_txt);
+      display.drawTextCentered(display.width() / 2, 54, "restore: long press");
     } else if (_page == HomePage::ADVERT) {
       display.setColor(UIColor::corp_blue);
       display.drawXbm((display.width() - 32) / 2, 18, advert_icon, 32, 32);
@@ -518,6 +539,8 @@ public:
     return 5000;   // next render after 5000 ms
   }
 
+  bool isDisplayPage() const { return _page == HomePage::OLED_CONTROL; }
+
   bool handleInput(char c) override {
     if (c == KEY_LEFT || c == KEY_PREV) {
       _page = (_page + HomePage::Count - 1) % HomePage::Count;
@@ -540,6 +563,26 @@ public:
         _task->disableBluetooth();
       } else {
         _task->enableBluetooth();
+      }
+      return true;
+    }
+    if (c == KEY_ENTER && _page == HomePage::OLED_CONTROL) {
+      const int8_t persistent_disabled = heltecV4GetDisplayDisabled();
+      if (persistent_disabled < 0) {
+        _task->showAlert("Display unsupported", 1000);
+      } else if (!display.isOn()) {
+        // A long press does not pass through checkDisplayOn(). If the normal
+        // inactivity timer blanked the OLED, consume this action by waking it
+        // instead of confirming a persistent shutdown on an unseen page.
+        if (persistent_disabled) {
+          heltecV4SetDisplayEnabled(true);
+        } else {
+          display.turnOn();
+        }
+        _task->showAlert(display.isOn() ? "Display on" : "Display wake failed", 1000);
+      } else {
+        _display_off_init = true;
+        _task->showAlert("Release to turn off", 800);
       }
       return true;
     }
@@ -843,6 +886,7 @@ bool UITask::isButtonPressed() const {
 }
 
 void UITask::loop() {
+  static bool display_was_on = false;
   char c = 0;
 #if UI_HAS_JOYSTICK
   int ev = user_btn.check();
@@ -940,7 +984,26 @@ void UITask::loop() {
   if (buzzer.isPlaying())  buzzer.loop();
 #endif
 
+  // Complete an armed OLED shutdown even if a message preview or another
+  // temporary screen became active before PRG was released. This prevents the
+  // action from remaining latent and firing later on return to the home page.
+  if (home != NULL) {
+    static_cast<HomeScreen *>(home)->processDisplayOffRelease();
+  }
+
   if (curr) curr->poll();
+
+  // Persistent restore happens inside the button layer and emits no UI key.
+  // Check after input processing so a restored OLED gets a fresh frame and a
+  // full timeout before the auto-off test runs in this same loop iteration.
+  if (_display != NULL) {
+    const bool display_is_on = _display->isOn();
+    if (display_is_on && !display_was_on) {
+      _auto_off = millis() + AUTO_OFF_MILLIS;
+      _next_refresh = 0;
+    }
+    display_was_on = display_is_on;
+  }
 
   if (_display != NULL && _display->isOn()) {
     if (millis() >= _next_refresh && curr) {
@@ -1016,9 +1079,13 @@ char UITask::checkDisplayOn(char c) {
 }
 
 char UITask::handleLongPress(char c) {
-  if (millis() - ui_started_at < 8000) {   // long press in first 8 seconds since startup -> CLI/rescue
+  const bool display_menu_action = home != NULL && curr == home &&
+      static_cast<HomeScreen *>(home)->isDisplayPage();
+  if (millis() - ui_started_at < 8000 && !display_menu_action) {
+    // Preserve the startup CLI/rescue gesture everywhere except the explicit
+    // OLED menu, where the selected local action takes precedence.
     the_mesh.enterCLIRescue();
-    c = 0;   // consume event
+    c = 0;
   }
   return c;
 }

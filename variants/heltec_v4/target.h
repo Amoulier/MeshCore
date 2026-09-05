@@ -25,6 +25,10 @@ extern EnvironmentSensorManager sensors;
 #ifdef DISPLAY_CLASS
   extern DISPLAY_CLASS display;
   extern MomentaryButton user_btn;
+
+  // Persistent OLED control shared by the local UI and the board CLI.
+  bool heltecV4SetDisplayEnabled(bool enabled);
+  int8_t heltecV4GetDisplayDisabled();
 #endif
 
 bool radio_init();
