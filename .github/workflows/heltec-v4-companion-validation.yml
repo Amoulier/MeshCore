@@ -96,13 +96,25 @@ jobs:
             Application-only image for a compatible MeshCore OTA/update path.
             Do not flash this file at address 0x0 as a fresh installation.
 
+          Bluetooth pairing
+          -----------------
+          On an OLED Companion with the default BLE configuration, MeshCore
+          generates the active six-digit PIN at boot and shows it on the OLED.
+          Enter the displayed PIN; 123456 is not the active session PIN unless
+          it was explicitly saved as a permanent PIN.
+
+          On-device OLED control
+          ----------------------
+          Short-press PRG to reach the OLED: ON page. Hold PRG for about one
+          second, then release when prompted to save the persistent OFF state.
+          Hold PRG for about one second at any time to restore the OLED.
+          Bluetooth and LoRa remain active while the OLED is disabled.
+
           Validation warning
           ------------------
           This is a prerelease candidate. Physical RF-power, current-consumption,
           prolonged BLE reconnection and identity-persistence validation remains
           required before production or unattended deployment.
-
-          The current Companion BLE target retains the public test BLE PIN 123456.
           EOF
 
       - name: Upload Companion BLE package
@@ -150,10 +162,25 @@ jobs:
           - \`*-factory.bin\`: complete fresh-install image for ESP32-S3, flashed at address \`0x0\`.
           - \`*-ota.bin\`: application-only image for a compatible MeshCore update path.
           - \`SHA256SUMS.txt\`: integrity checksums.
-          - \`INSTALL.txt\`: installation and validation notes.
+          - \`INSTALL.txt\`: installation, pairing and OLED-control notes.
 
-          This remains validation firmware. The target currently uses the public
-          test BLE PIN \`123456\`. Do not treat it as a production credential.
+          ### Bluetooth PIN
+
+          With the default OLED Companion configuration, the active six-digit
+          BLE PIN is generated at boot and shown on the screen. Use that displayed
+          PIN. The value \`123456\` is not the active session PIN unless it was
+          explicitly saved as a permanent PIN.
+
+          ### OLED control from the node
+
+          Navigate with short PRG presses to \`OLED: ON\`, hold PRG for about one
+          second, and release when prompted. The persistent setting survives a
+          reboot. Hold PRG again for about one second to restore the display.
+          Bluetooth and LoRa continue operating while the OLED is disabled.
+
+          This remains validation firmware and still requires physical RF,
+          current-consumption, BLE longevity and persistence testing before a
+          stable production release.
           EOF
 
           if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
