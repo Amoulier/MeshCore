@@ -27,10 +27,8 @@ static char ethernet_command[MAX_POST_TEXT_LEN+1];
 #endif
 
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
-
   board.begin();
+  Serial.begin(115200);
 
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.begin();
@@ -158,4 +156,5 @@ void loop() {
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.loop();
 #endif
+  board.idle();
 }

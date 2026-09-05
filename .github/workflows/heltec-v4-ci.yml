@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   scope-audit:
-    name: Verify Heltec V4-only scope
+    name: Verify Heltec V4-only scope and target parity
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -41,14 +41,19 @@ jobs:
           expected_targets=(
             heltec_v4_repeater
             heltec_v4_solar_repeater
+            heltec_v4_solar_repeater_headless
             heltec_v4_expansionkit_repeater
             heltec_v4_repeater_bridge_espnow
+            heltec_v4_repeater_bridge_espnow_low_power
             heltec_v4_room_server
             heltec_v4_terminal_chat
             heltec_v4_companion_radio_usb
             heltec_v4_companion_radio_ble
+            heltec_v4_companion_radio_ble_low_power
             heltec_v4_companion_radio_wifi
+            heltec_v4_companion_radio_wifi_low_power
             heltec_v4_sensor
+            heltec_v4_sensor_low_power
             heltec_v4_kiss_modem
           )
 
@@ -56,10 +61,12 @@ jobs:
             grep -qx "  ${target}" build.sh
             grep -qx "          - ${target}" .github/workflows/heltec-v4-ci.yml
             grep -qx "          - ${target}" .github/workflows/heltec-v4-validation-release.yml
+            grep -q "^\[env:${target}\]" variants/heltec_v4/platformio.ini
           done
 
           test "$(grep -Ec '^  heltec_v4_[a-z0-9_]+$' build.sh)" -eq "${#expected_targets[@]}"
-          test "$(grep -Ec '^          - heltec_v4_[a-z0-9_]+$' .github/workflows/heltec-v4-validation-release.yml)" -eq "${#expected_targets[@]}"
+          test "$(sed -n '/^        environment:/,/^    steps:/p' .github/workflows/heltec-v4-ci.yml | grep -Ec '^          - heltec_v4_[a-z0-9_]+$')" -eq "${#expected_targets[@]}"
+          test "$(sed -n '/^        environment:/,/^    steps:/p' .github/workflows/heltec-v4-validation-release.yml | grep -Ec '^          - heltec_v4_[a-z0-9_]+$')" -eq "${#expected_targets[@]}"
 
           application_loops=(
             examples/companion_radio/main.cpp
@@ -72,6 +79,7 @@ jobs:
 
           for source in "${application_loops[@]}"; do
             test "$(grep -Ec '^  board\.loop\(\);$' "${source}")" -eq 1
+            test "$(grep -Ec '^  board\.idle\(\);$' "${source}")" -eq 1
           done
 
   unit-tests:
@@ -96,14 +104,19 @@ jobs:
         environment:
           - heltec_v4_repeater
           - heltec_v4_solar_repeater
+          - heltec_v4_solar_repeater_headless
           - heltec_v4_expansionkit_repeater
           - heltec_v4_repeater_bridge_espnow
+          - heltec_v4_repeater_bridge_espnow_low_power
           - heltec_v4_room_server
           - heltec_v4_terminal_chat
           - heltec_v4_companion_radio_usb
           - heltec_v4_companion_radio_ble
+          - heltec_v4_companion_radio_ble_low_power
           - heltec_v4_companion_radio_wifi
+          - heltec_v4_companion_radio_wifi_low_power
           - heltec_v4_sensor
+          - heltec_v4_sensor_low_power
           - heltec_v4_kiss_modem
 
     steps:
@@ -113,7 +126,7 @@ jobs:
       - name: Set up build environment
         uses: ./.github/actions/setup-build-environment
 
-      - name: Compile and package firmware
+      - name: Compile and validate firmware images
         shell: bash
         env:
           TARGET: ${{ matrix.environment }}
@@ -121,5 +134,19 @@ jobs:
           set -euo pipefail
           pio run -e "${TARGET}"
           pio run -e "${TARGET}" -t mergebin
-          test -s ".pio/build/${TARGET}/firmware.bin"
-          test -s ".pio/build/${TARGET}/firmware-merged.bin"
+
+          app=".pio/build/${TARGET}/firmware.bin"
+          merged=".pio/build/${TARGET}/firmware-merged.bin"
+          test -s "${app}"
+          test -s "${merged}"
+
+          python - "${app}" "${merged}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          app = Path(sys.argv[1]).read_bytes()
+          merged = Path(sys.argv[2]).read_bytes()
+          assert app and app[0] == 0xE9, "OTA/application image lacks an ESP image header"
+          assert merged and merged[0] == 0xE9, "merged image lacks the bootloader ESP image header"
+          assert len(merged) > 0x10000 and merged[0x10000] == 0xE9, "merged image lacks the application header at 0x10000"
+          PY

@@ -560,9 +560,8 @@ void halt() {
 }
 
 void setup() {
-  Serial.begin(115200);
-
   board.begin();
+  Serial.begin(115200);
 
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.begin();
@@ -603,4 +602,5 @@ void loop() {
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.loop();
 #endif
+  board.idle();
 }

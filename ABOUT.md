@@ -102,3 +102,12 @@ Original MeshCore authors and contributors retain attribution for upstream work.
 ## Suggested repository topics
 
 `meshcore`, `heltec`, `heltec-v4`, `esp32-s3`, `lora`, `mesh-network`, `companion`, `repeater`, `solar-node`, `firmware`, `platformio`, `oled`, `gps`, `battery-management`
+
+
+## Energy optimization generation
+
+The current generation adds role-specific peripheral builds, cached battery
+telemetry with fresh safety readings, cooperative ESP32 idle, optional DFS and
+automatic light sleep, BLE/Wi-Fi/ESP-NOW power policies, runtime RX profiles and
+a deep-sleep Sensor target. New installations request 11 dBm SX1262 input while
+the detected-FEM policy retains the 22 dBm estimated antenna-output ceiling.

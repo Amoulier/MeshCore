@@ -1,12 +1,19 @@
-name: Heltec V4 Validation Release
+name: Heltec V4 Energy Release
 
 on:
   push:
-    tags:
-      - "heltec-v4-validation-v*"
+    branches:
+      - main
+    paths:
+      - .github/release/heltec-v4-energy-version.txt
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: heltec-v4-energy-release
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -18,67 +25,127 @@ jobs:
         environment:
           - heltec_v4_repeater
           - heltec_v4_solar_repeater
+          - heltec_v4_solar_repeater_headless
           - heltec_v4_expansionkit_repeater
           - heltec_v4_repeater_bridge_espnow
+          - heltec_v4_repeater_bridge_espnow_low_power
           - heltec_v4_room_server
           - heltec_v4_terminal_chat
           - heltec_v4_companion_radio_usb
           - heltec_v4_companion_radio_ble
+          - heltec_v4_companion_radio_ble_low_power
           - heltec_v4_companion_radio_wifi
+          - heltec_v4_companion_radio_wifi_low_power
           - heltec_v4_sensor
+          - heltec_v4_sensor_low_power
           - heltec_v4_kiss_modem
 
     steps:
-      - name: Check out tagged source
+      - name: Check out release source
         uses: actions/checkout@v6
+
+      - name: Read and validate release tag
+        id: release_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="$(tr -d '[:space:]' < .github/release/heltec-v4-energy-version.txt)"
+          [[ "${release_tag}" =~ ^heltec-v4-energy-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+          echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up build environment
         uses: ./.github/actions/setup-build-environment
 
-      - name: Build OTA and merged images
+      - name: Build, validate and package images
         shell: bash
         env:
           TARGET: ${{ matrix.environment }}
+          RELEASE_TAG: ${{ steps.release_meta.outputs.release_tag }}
         run: |
           set -euo pipefail
+
           short_sha="$(git rev-parse --short=8 HEAD)"
+          build_commit="$(git rev-parse HEAD)"
           build_date="$(date -u '+%d-%b-%Y')"
-          release_version="${GITHUB_REF_NAME}"
-          firmware_version="${release_version#heltec-v4-validation-}-${short_sha}"
-          package_version="${release_version}-${short_sha}"
+          firmware_version="${RELEASE_TAG}-${short_sha}"
           export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS:-} -DFIRMWARE_BUILD_DATE='\"${build_date}\"' -DFIRMWARE_VERSION='\"${firmware_version}\"'"
 
           pio run -e "${TARGET}"
           pio run -e "${TARGET}" -t mergebin
 
+          app_source=".pio/build/${TARGET}/firmware.bin"
+          merged_source=".pio/build/${TARGET}/firmware-merged.bin"
+          test -s "${app_source}"
+          test -s "${merged_source}"
+
+          python - "${app_source}" "${merged_source}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          app = Path(sys.argv[1]).read_bytes()
+          merged = Path(sys.argv[2]).read_bytes()
+          assert app and app[0] == 0xE9, "OTA/application image lacks an ESP image header"
+          assert merged and merged[0] == 0xE9, "merged image lacks the bootloader ESP image header"
+          assert len(merged) > 0x10000 and merged[0x10000] == 0xE9, "merged image lacks the application header at 0x10000"
+          PY
+
           mkdir -p out
-          base="${TARGET}-${package_version}"
-          cp ".pio/build/${TARGET}/firmware.bin" "out/${base}.bin"
-          cp ".pio/build/${TARGET}/firmware-merged.bin" "out/${base}-merged.bin"
+          base="${TARGET}-${RELEASE_TAG}-${short_sha}"
+          ota="out/${base}-ota.bin"
+          merged="out/${base}-merged.bin"
+          manifest="out/${base}.json"
+          notes="out/${base}.txt"
+          checksums="out/${base}.sha256"
+
+          cp "${app_source}" "${ota}"
+          cp "${merged_source}" "${merged}"
+
+          python - "${manifest}" "${TARGET}" "${RELEASE_TAG}" "${firmware_version}" "${build_commit}" "${build_date}" "$(basename "${ota}")" "$(basename "${merged}")" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          path, target, release, firmware, commit, date, ota, merged = sys.argv[1:]
+          Path(path).write_text(json.dumps({
+              "hardware": "Heltec WiFi LoRa 32 V4 OLED",
+              "target": target,
+              "release": release,
+              "firmware_version": firmware,
+              "commit": commit,
+              "build_date_utc": date,
+              "ota_image": ota,
+              "merged_image": merged,
+              "merged_flash_address": "0x0",
+              "ota_flash_address": "0x10000",
+              "validation_status": "prerelease; hardware qualification pending"
+          }, indent=2) + "\n", encoding="utf-8")
+          PY
+
+          cat > "${notes}" <<EOF
+          Hardware: Heltec WiFi LoRa 32 V4 OLED
+          Target: ${TARGET}
+          Release: ${RELEASE_TAG}
+          Firmware version: ${firmware_version}
+          Commit: ${build_commit}
+          Build date (UTC): ${build_date}
+
+          $(basename "${ota}")
+            Application/OTA image for an already compatible MeshCore installation.
+            Do not flash this file at address 0x0.
+
+          $(basename "${merged}")
+            Complete ESP32-S3 fresh-install image.
+            Keep the exact -merged.bin suffix and flash at address 0x0.
+
+          This is validation firmware. Confirm the selected role, antenna,
+          frequency plan, hardware revision and regional requirements before use.
+          Replace example passwords and Wi-Fi credentials before deployment.
+          EOF
 
           (
             cd out
-            sha256sum "${base}.bin" "${base}-merged.bin" > "${base}.sha256"
+            sha256sum "$(basename "${ota}")" "$(basename "${merged}")" "$(basename "${manifest}")" "$(basename "${notes}")" > "$(basename "${checksums}")"
           )
-
-          cat > "out/${base}.txt" <<EOF
-          Target: ${TARGET}
-          Release: ${release_version}
-          Firmware version: ${firmware_version}
-          Commit: $(git rev-parse HEAD)
-          Build date (UTC): ${build_date}
-
-          ${base}.bin
-            Application image for a compatible MeshCore OTA/update path.
-
-          ${base}-merged.bin
-            Complete fresh-install image. Flash at address 0x0 on ESP32-S3.
-
-          This is validation firmware. Confirm hardware revision, antenna,
-          regional radio settings and the target profile before installation.
-          The solar target must be validated with the final cell, charger and
-          panel before unattended deployment.
-          EOF
 
       - name: Upload packaged target
         uses: actions/upload-artifact@v7
@@ -88,37 +155,130 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Publish validation prerelease
+    name: Publish all-variant energy prerelease
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Check out release source
+        uses: actions/checkout@v6
+
+      - name: Read and validate release tag
+        id: release_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="$(tr -d '[:space:]' < .github/release/heltec-v4-energy-version.txt)"
+          [[ "${release_tag}" =~ ^heltec-v4-energy-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+          echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
+
       - name: Download all target packages
         uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           path: out
 
+      - name: Verify inventory and create aggregate package
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release_meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          expected=16
+          test "$(find out -maxdepth 1 -type f -name '*-ota.bin' | wc -l)" -eq "${expected}"
+          test "$(find out -maxdepth 1 -type f -name '*-merged.bin' | wc -l)" -eq "${expected}"
+          test "$(find out -maxdepth 1 -type f -name '*.json' | wc -l)" -eq "${expected}"
+          test "$(find out -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq "${expected}"
+
+          git rev-parse HEAD > out/BUILD_COMMIT.txt
+          cat > out/VARIANTS.txt <<'EOF'
+          heltec_v4_repeater
+          heltec_v4_solar_repeater
+          heltec_v4_solar_repeater_headless
+          heltec_v4_expansionkit_repeater
+          heltec_v4_repeater_bridge_espnow
+          heltec_v4_repeater_bridge_espnow_low_power
+          heltec_v4_room_server
+          heltec_v4_terminal_chat
+          heltec_v4_companion_radio_usb
+          heltec_v4_companion_radio_ble
+          heltec_v4_companion_radio_ble_low_power
+          heltec_v4_companion_radio_wifi
+          heltec_v4_companion_radio_wifi_low_power
+          heltec_v4_sensor
+          heltec_v4_sensor_low_power
+          heltec_v4_kiss_modem
+          EOF
+
+          cat > out/INSTALLATION.txt <<'EOF'
+          Heltec V4 Energy Optimization firmware
+
+          *-merged.bin
+            Complete image for a fresh installation. Keep the exact suffix and
+            flash at 0x0 using the ESP32-S3 Custom Firmware path.
+
+          *-ota.bin
+            Application-only image for a compatible MeshCore update path.
+            Do not flash at 0x0.
+
+          The Companion BLE uses the six-digit PIN displayed on the OLED unless
+          a permanent PIN has been configured. The OLED can be disabled locally
+          from the node's Display page and restored by holding PRG.
+
+          This release is a prerelease until physical current, RF-output,
+          sensitivity, BLE/Wi-Fi/ESP-NOW longevity and solar-recovery tests are
+          completed on both GC1109 and KCT8103L hardware.
+          EOF
+
+          (
+            cd out
+            find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' ! -name '*.zip' -printf '%f\n' \
+              | sort \
+              | xargs sha256sum > SHA256SUMS.txt
+          )
+
+          archive="MeshCore-Heltec-V4-all-variants-${RELEASE_TAG}.zip"
+          (
+            cd out
+            zip -9 "${archive}" ./*
+            sha256sum "${archive}" > "${archive}.sha256"
+          )
+
       - name: Publish prerelease
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "Heltec V4 validation ${{ github.ref_name }}"
+          tag_name: ${{ steps.release_meta.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: "MeshCore Heltec V4 Energy Optimization ${{ steps.release_meta.outputs.release_tag }}"
           prerelease: true
           draft: false
+          make_latest: false
           fail_on_unmatched_files: true
           body: |
-            Validation build for the Heltec WiFi LoRa 32 V4 OLED-only fork.
+            Heltec WiFi LoRa 32 V4 OLED-only energy-optimization prerelease.
 
-            Included targets cover Companion BLE/USB/Wi-Fi, standard and solar
-            repeaters, expansion-kit repeater, ESP-NOW bridge, room server,
-            terminal chat, sensor and KISS modem.
+            This release contains all 16 supported firmware variants, including
+            Companion BLE/USB/Wi-Fi, standard and solar repeaters, headless solar,
+            expansion-kit repeater, standard and low-power ESP-NOW bridges, room
+            server, terminal chat, standard and low-power sensors, and KISS modem.
 
-            Important:
-            - This is a prerelease, not a stable hardware-qualified release.
-            - The unmerged `.bin` is the application/OTA image.
-            - The `-merged.bin` image is for a fresh ESP32-S3 flash at address 0x0.
-            - Verify RF output, current consumption, BLE reconnection, OLED/GPS
-              power behavior and the 3.50 V / 3.65 V solar recovery cycle on the
-              final hardware before unattended deployment.
-            - Replace example passwords and Wi-Fi credentials before use.
+            Main changes:
+            - cooperative ESP32 idle and role-specific power policies;
+            - cached battery telemetry with fresh safety measurements;
+            - persistent OLED/VEXT and GPS power control;
+            - staged BLE advertising and adaptive connection parameters;
+            - Wi-Fi modem sleep with reconnect backoff;
+            - optional ESP-NOW receive windows;
+            - adaptive noise-floor calibration;
+            - low-power sensor and headless solar variants;
+            - transmit power preserved at the existing FEM-aware 22 dBm estimated ceiling.
+
+            Installation rules:
+            - `*-merged.bin` is the complete image for a fresh flash at `0x0`.
+            - `*-ota.bin` is the application image for a compatible update path.
+            - Do not rename a complete image or remove its `-merged.bin` suffix.
+
+            This remains a prerelease pending physical current, RF, sensitivity,
+            BLE/Wi-Fi/ESP-NOW and full solar recovery validation on V4.2/GC1109
+            and V4.3/KCT8103L hardware.
           files: out/*

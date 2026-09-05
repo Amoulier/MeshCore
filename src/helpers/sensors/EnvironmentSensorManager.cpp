@@ -1,6 +1,7 @@
 #include "EnvironmentSensorManager.h"
 
 #include <Wire.h>
+#include <helpers/PersistentWriteGuard.h>
 
 #if ENV_PIN_SDA && ENV_PIN_SCL
 #define TELEM_WIRE &Wire1  // Use Wire1 as the I2C bus for Environment Sensors
@@ -217,12 +218,14 @@ static RAK12500LocationProvider RAK12500_provider;
 // or misbehaving device cannot stall or crash the boot sequence.
 // ============================================================
 
+#if defined(ENV_HAS_I2C_SENSORS) && ENV_HAS_I2C_SENSORS
 static void scanI2CBus(TwoWire* wire, bool found[128]) {
   for (uint8_t addr = 0x08; addr < 0x78; addr++) {
     wire->beginTransmission(addr);
     found[addr] = (wire->endTransmission() == 0);
   }
 }
+#endif
 
 // ============================================================
 // Per-sensor init and query functions
@@ -487,6 +490,7 @@ static void bsec_load_state() {
 }
 
 static void bsec_save_state() {
+  if (!meshcorePersistentWritesAllowed()) return;
   using namespace Adafruit_LittleFS_Namespace;
   uint8_t state[BSEC_MAX_STATE_BLOB_SIZE];
   bsec_iaq.getState(state);
@@ -631,6 +635,7 @@ bool EnvironmentSensorManager::begin() {
   #endif
   #endif
 
+#if defined(ENV_HAS_I2C_SENSORS) && ENV_HAS_I2C_SENSORS
   #if ENV_PIN_SDA && ENV_PIN_SCL
     #ifdef NRF52_PLATFORM
   Wire1.setPins(ENV_PIN_SDA, ENV_PIN_SCL);
@@ -671,6 +676,10 @@ bool EnvironmentSensorManager::begin() {
       _active_sensors[_active_sensor_count++] = { def.query, sub };
     }
   }
+
+#else
+  _active_sensor_count = 0;
+#endif
 
   return true;
 }
@@ -762,6 +771,7 @@ void EnvironmentSensorManager::initBasicGPS() {
   // wait for the optional expansion GPS during boot.
   gps_detected = true;
   _location->stop();
+  Serial1.end();
   gps_active = false;
   return;
 #endif
@@ -902,6 +912,12 @@ void EnvironmentSensorManager::start_gps() {
     return;
   #endif
 
+  Serial1.setPins(PIN_GPS_TX, PIN_GPS_RX);
+#ifdef GPS_BAUD_RATE
+  Serial1.begin(GPS_BAUD_RATE);
+#else
+  Serial1.begin(9600);
+#endif
   _location->begin();
   _location->reset();
 
@@ -921,6 +937,7 @@ void EnvironmentSensorManager::stop_gps() {
   #endif
 
   _location->stop();
+  Serial1.end();
 
   #ifndef PIN_GPS_EN
   MESH_DEBUG_PRINTLN("Stop GPS is N/A on this board. Actual GPS state unchanged");

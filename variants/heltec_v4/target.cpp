@@ -12,6 +12,16 @@ RADIO_CLASS radio = new Module(P_LORA_NSS, P_LORA_DIO_1, P_LORA_RESET, P_LORA_BU
 
 WRAPPER_CLASS radio_driver(radio, board);
 
+bool heltecV4SetInternalRxBoosted(bool enabled)
+{
+  return radio_driver.setRxBoostedGainMode(enabled);
+}
+
+int8_t heltecV4GetInternalRxBoosted()
+{
+  return radio_driver.getRxBoostedGainMode() ? 1 : 0;
+}
+
 ESP32RTCClock fallback_clock;
 AutoDiscoverRTCClock rtc_clock(fallback_clock);
 
@@ -77,7 +87,9 @@ void heltecV4CriticalPreSleep()
 bool radio_init()
 {
   fallback_clock.begin();
+#if defined(HELTEC_V4_ENABLE_EXTERNAL_RTC_PROBE) && HELTEC_V4_ENABLE_EXTERNAL_RTC_PROBE
   rtc_clock.begin(Wire);
+#endif
 
 #if defined(P_LORA_SCLK)
   const bool initialized = radio.std_init(&spi);

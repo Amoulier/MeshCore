@@ -52,6 +52,9 @@ public:
   void begin(FILESYSTEM* fs);
   void loop();
   void handleCommand(uint32_t sender_timestamp, char* command, char* reply);
+  bool hasPendingWork() const {
+    return _mgr->getOutboundTotal() > 0 || dirty_contacts_expiry != 0 || num_alert_tasks > 0;
+  }
 
   // CommonCLI callbacks
   const char* getFirmwareVer() override { return FIRMWARE_VERSION; }

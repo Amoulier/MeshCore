@@ -32,6 +32,18 @@
 #ifndef HELTEC_V4_MAX_OUTPUT_POWER_DBM
 #define HELTEC_V4_MAX_OUTPUT_POWER_DBM 22
 #endif
+#ifndef HELTEC_V4_BATTERY_CACHE_MSEC
+#define HELTEC_V4_BATTERY_CACHE_MSEC 10000UL
+#endif
+#ifndef HELTEC_V4_TX_PA_SETTLE_US
+#define HELTEC_V4_TX_PA_SETTLE_US 20U
+#endif
+#ifndef HELTEC_V4_CPU_MAX_MHZ
+#define HELTEC_V4_CPU_MAX_MHZ 80
+#endif
+#ifndef HELTEC_V4_CPU_MIN_MHZ
+#define HELTEC_V4_CPU_MIN_MHZ 40
+#endif
 
 __attribute__((noinline)) bool heltecV4SetDisplayEnabled(bool enabled) __attribute__((weak));
 __attribute__((noinline)) bool heltecV4SetDisplayEnabled(bool enabled)
@@ -48,6 +60,19 @@ __attribute__((noinline)) int8_t heltecV4GetDisplayDisabled()
 
 __attribute__((noinline)) void heltecV4CriticalPreSleep() __attribute__((weak));
 __attribute__((noinline)) void heltecV4CriticalPreSleep() {}
+
+__attribute__((noinline)) bool heltecV4SetInternalRxBoosted(bool enabled) __attribute__((weak));
+__attribute__((noinline)) bool heltecV4SetInternalRxBoosted(bool enabled)
+{
+  (void)enabled;
+  return false;
+}
+
+__attribute__((noinline)) int8_t heltecV4GetInternalRxBoosted() __attribute__((weak));
+__attribute__((noinline)) int8_t heltecV4GetInternalRxBoosted()
+{
+  return -1;
+}
 
 namespace {
 
@@ -199,13 +224,19 @@ void HeltecV4Board::configureCpuPowerManagement()
 #else
   esp_pm_config_esp32s3_t config = {};
 #endif
-  config.max_freq_mhz = 80;
-  config.min_freq_mhz = 40;
-  config.light_sleep_enable = false;
-  const esp_err_t result = esp_pm_configure(&config);
-  MESH_DEBUG_PRINTLN("Heltec V4 dynamic frequency scaling result: %d", result);
+  config.max_freq_mhz = HELTEC_V4_CPU_MAX_MHZ;
+  config.min_freq_mhz = HELTEC_V4_CPU_MIN_MHZ;
+#if defined(HELTEC_V4_AUTO_LIGHT_SLEEP) && HELTEC_V4_AUTO_LIGHT_SLEEP
+  config.light_sleep_enable = true;
 #else
-  MESH_DEBUG_PRINTLN("Heltec V4 dynamic frequency scaling unavailable; retaining fixed 80 MHz");
+  config.light_sleep_enable = false;
+#endif
+  const esp_err_t result = esp_pm_configure(&config);
+  MESH_DEBUG_PRINTLN("Heltec V4 PM result=%d range=%d-%dMHz light_sleep=%d",
+                     result, HELTEC_V4_CPU_MIN_MHZ, HELTEC_V4_CPU_MAX_MHZ,
+                     config.light_sleep_enable ? 1 : 0);
+#else
+  MESH_DEBUG_PRINTLN("Heltec V4 DFS unavailable; retaining fixed %d MHz", HELTEC_V4_CPU_MAX_MHZ);
 #endif
 }
 
@@ -278,7 +309,7 @@ void HeltecV4Board::begin()
   const bool timer_wake = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
   const bool radio_state_known_safe = heltec_v4::isBatteryRecoveryRadioStateKnownSafe(
       recovery_was_latched, timer_wake);
-  const uint16_t boot_millivolts = readBatteryMilliVoltsRaw();
+  const uint16_t boot_millivolts = getBattMilliVoltsFresh();
   if (heltec_v4::shouldUseCriticalBatteryRecovery(
           boot_millivolts, recovery_was_latched,
           HELTEC_V4_BATTERY_BOOT_GUARD_MIN_MILLIVOLTS,
@@ -320,6 +351,10 @@ void HeltecV4Board::begin()
   setLoRaFemLnaEnabled(enable_lna);
 
   periph_power.begin();
+#if defined(HELTEC_V4_KEEP_ACCESSORY_RAIL_ON) && HELTEC_V4_KEEP_ACCESSORY_RAIL_ON
+  // The board, not the OLED driver, owns the permanent accessory claim.
+  periph_power.claim();
+#endif
   configureCpuPowerManagement();
 
   const esp_reset_reason_t reason = esp_reset_reason();
@@ -347,7 +382,7 @@ void HeltecV4Board::loop()
   }
   last_critical_battery_check = now;
 
-  const uint16_t battery_millivolts = getBattMilliVolts();
+  const uint16_t battery_millivolts = getBattMilliVoltsFresh();
   critical_low_readings = heltec_v4::updateLowReadingCounter(
       critical_low_readings, battery_millivolts,
       HELTEC_V4_BATTERY_BOOT_GUARD_MIN_MILLIVOLTS,
@@ -365,6 +400,10 @@ void HeltecV4Board::onBeforeTransmit()
   digitalWrite(P_LORA_TX_LED, HIGH);
 #endif
   loRaFEMControl.setTxModeEnable();
+#if HELTEC_V4_TX_PA_SETTLE_US > 0
+  // Let the detected external FEM reach its TX state before the first preamble symbol.
+  delayMicroseconds(HELTEC_V4_TX_PA_SETTLE_US);
+#endif
 }
 
 void HeltecV4Board::onAfterTransmit()
@@ -378,7 +417,7 @@ void HeltecV4Board::onAfterTransmit()
 bool HeltecV4Board::startOTAUpdate(const char *id, char reply[])
 {
 #if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
-  const uint16_t battery_millivolts = readBatteryMilliVoltsRaw();
+  const uint16_t battery_millivolts = getBattMilliVoltsFresh();
   if (battery_millivolts < HELTEC_V4_BATTERY_RECOVERY_MILLIVOLTS) {
     sprintf(reply, "Error: battery %umV; OTA requires at least %umV",
             static_cast<unsigned>(battery_millivolts),
@@ -389,11 +428,12 @@ bool HeltecV4Board::startOTAUpdate(const char *id, char reply[])
   return ESP32Board::startOTAUpdate(id, reply);
 }
 
-void HeltecV4Board::powerOff()
+void HeltecV4Board::enterDeepSleep(uint32_t secs)
 {
   persistent_writes_allowed = false;
   heltecV4CriticalPreSleep();
   loRaFEMControl.setSleepModeEnable();
+  configureAndHoldPin(PIN_ADC_CTRL, LOW);
 #ifdef PIN_OLED_RESET
   configureAndHoldPin(PIN_OLED_RESET, LOW);
 #endif
@@ -417,15 +457,35 @@ void HeltecV4Board::powerOff()
   Serial.flush();
   delay(20);
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  if (secs > 0) {
+    esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(secs) * 1000000ULL);
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_ON);
+  }
   esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
   esp_deep_sleep_start();
 }
 
-uint16_t HeltecV4Board::getBattMilliVolts()
+void HeltecV4Board::powerOff()
+{
+  enterDeepSleep(0);
+}
+
+uint16_t HeltecV4Board::getBattMilliVoltsFresh()
 {
   last_battery_millivolts = readBatteryMilliVoltsRaw();
+  last_battery_sample_millis = millis();
   updateReportedBatteryPercent(last_battery_millivolts);
   return last_battery_millivolts;
+}
+
+uint16_t HeltecV4Board::getBattMilliVolts()
+{
+  const uint32_t now = millis();
+  if (last_battery_millivolts != 0 &&
+      static_cast<uint32_t>(now - last_battery_sample_millis) < HELTEC_V4_BATTERY_CACHE_MSEC) {
+    return last_battery_millivolts;
+  }
+  return getBattMilliVoltsFresh();
 }
 
 int8_t HeltecV4Board::getBattPercent()
@@ -434,6 +494,13 @@ int8_t HeltecV4Board::getBattPercent()
     getBattMilliVolts();
   }
   return static_cast<int8_t>(reported_battery_percent);
+}
+
+void HeltecV4Board::idle(uint32_t delay_millis)
+{
+  // Arduino delay yields to the FreeRTOS idle task, allowing DFS and
+  // automatic light sleep where the selected target enables them.
+  delay(delay_millis == 0 ? 1 : delay_millis);
 }
 
 int8_t HeltecV4Board::mapRadioTxPower(int8_t requested_radio_dbm)
@@ -549,6 +616,52 @@ bool HeltecV4Board::handleCommand(const char *command, uint32_t sender_timestamp
     }
     fem_lna_nvs_explicit = persistFemLnaPreference(enable) || fem_lna_nvs_explicit;
     strcpy(reply, enable ? "OK - LoRa FEM RX gain on" : "OK - LoRa FEM RX gain off");
+    return true;
+  }
+
+  if (strcmp(command, "get radio.rxprofile") == 0) {
+    const int8_t internal = heltecV4GetInternalRxBoosted();
+    const bool external_supported = loRaFEMControl.isLnaCanControl();
+    const bool external = !external_supported || isLoRaFemLnaEnabled();
+    const char *profile = "custom";
+    if (internal > 0 && external) {
+      profile = "range";
+    } else if (internal == 0 && external) {
+      profile = "balanced";
+    } else if (internal == 0 && !external) {
+      profile = "battery";
+    }
+    sprintf(reply, "> %s (sx1262:%s,fem:%s)", profile,
+            internal > 0 ? "boosted" : (internal == 0 ? "normal" : "unknown"),
+            external_supported ? (external ? "lna" : "bypass") : "fixed");
+    return true;
+  }
+
+  if (memcmp(command, "set radio.rxprofile ", 20) == 0) {
+    const char *value = &command[20];
+    const bool range = strcmp(value, "range") == 0;
+    const bool balanced = strcmp(value, "balanced") == 0;
+    const bool battery = strcmp(value, "battery") == 0;
+    if (!range && !balanced && !battery) {
+      strcpy(reply, "Error: profile must be range, balanced or battery");
+      return true;
+    }
+    const bool internal_boost = range;
+    const bool external_lna = range || balanced;
+    if (!heltecV4SetInternalRxBoosted(internal_boost)) {
+      strcpy(reply, "Error: failed to set SX1262 RX gain");
+      return true;
+    }
+    if (loRaFEMControl.isLnaCanControl() && !setLoRaFemLnaEnabled(external_lna)) {
+      strcpy(reply, "Error: failed to set FEM RX gain");
+      return true;
+    }
+    if (_prefs) {
+      _prefs->setByKey("rxgain", internal_boost ? "1" : "0");
+      _prefs->setByKey("fem_rxgain", external_lna ? "1" : "0");
+    }
+    fem_lna_nvs_explicit = persistFemLnaPreference(external_lna) || fem_lna_nvs_explicit;
+    sprintf(reply, "OK - RX profile %s", value);
     return true;
   }
 

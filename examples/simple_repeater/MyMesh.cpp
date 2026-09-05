@@ -3,6 +3,13 @@
 
 /* ------------------------------ Config -------------------------------- */
 
+#ifndef DEFAULT_ADVERT_INTERVAL
+#define DEFAULT_ADVERT_INTERVAL 1
+#endif
+#ifndef DEFAULT_POWERSAVING_ENABLED
+#define DEFAULT_POWERSAVING_ENABLED 0
+#endif
+
 #ifndef LORA_FREQ
   #define LORA_FREQ 915.0
 #endif
@@ -900,7 +907,7 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.bw = LORA_BW;
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
-  _prefs.advert_interval = 1;        // default to 2 minutes for NEW installs
+  _prefs.advert_interval = DEFAULT_ADVERT_INTERVAL;        // default to 2 minutes for NEW installs
   _prefs.flood_advert_interval = 47; // 47 hours
   _prefs.flood_max = 64;
   _prefs.flood_max_unscoped = 64;
@@ -924,6 +931,7 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.advert_loc_policy = ADVERT_LOC_PREFS;
 
   _prefs.adc_multiplier = 0.0f; // 0.0f means use default board multiplier
+  _prefs.powersaving_enabled = DEFAULT_POWERSAVING_ENABLED;
 
 #if defined(USE_SX1262) || defined(USE_SX1268)
 #ifdef SX126X_RX_BOOSTED_GAIN

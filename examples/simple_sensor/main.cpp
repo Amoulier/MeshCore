@@ -53,10 +53,12 @@ void halt() {
 static char command[160];
 
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
-
   board.begin();
+  Serial.begin(115200);
+#if defined(HELTEC_V4_SENSOR_LOW_POWER) && HELTEC_V4_SENSOR_LOW_POWER
+  // Keep the sensor rail up for this short wake cycle. Deep sleep forces it off.
+  board.periph_power.claim();
+#endif
 
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.begin();
@@ -118,6 +120,9 @@ void setup() {
 #if ENABLE_ADVERT_ON_BOOT == 1
   the_mesh.sendSelfAdvertisement(16000, false);
 #endif
+#if defined(HELTEC_V4_SENSOR_LOW_POWER) && HELTEC_V4_SENSOR_LOW_POWER
+  the_mesh.sendSelfAdvertisement(500, false);
+#endif
 }
 
 void loop() {
@@ -155,4 +160,11 @@ void loop() {
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.loop();
 #endif
+
+#if defined(HELTEC_V4_SENSOR_LOW_POWER) && HELTEC_V4_SENSOR_LOW_POWER
+  if (millis() >= HELTEC_V4_SENSOR_AWAKE_MSEC && !the_mesh.hasPendingWork()) {
+    board.enterDeepSleep(HELTEC_V4_SENSOR_SLEEP_SECS);
+  }
+#endif
+  board.idle();
 }
