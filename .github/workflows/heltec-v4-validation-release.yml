@@ -176,23 +176,45 @@ jobs:
           body: |
             Heltec WiFi LoRa 32 V4 OLED-only energy-optimization prerelease.
 
-            It contains all 16 supported firmware variants. Each role has only
-            two installable files:
-            - `*-merged.bin`: complete image for a fresh flash at `0x0`;
+            Each role has two installable files:
+            - `*-merged.bin`: complete image for a fresh flash or recovery at `0x0`;
             - `*-ota.bin`: application image for a compatible update path.
 
-            The single ZIP contains every variant. Installation guidance and all
-            integrity hashes are centralized in `INSTALLATION.txt` and
-            `SHA256SUMS.txt`; per-variant manifests and repeated notes are no
-            longer published.
+            ## Firmware variants
+
+            ### Companion
+            - `heltec_v4_companion_radio_ble` — Phone Companion over BLE; remains discoverable continuously.
+            - `heltec_v4_companion_radio_ble_low_power` — BLE Companion that turns Bluetooth off after five disconnected minutes; restore it locally with PRG.
+            - `heltec_v4_companion_radio_usb` — Companion for a computer or host connected through USB serial.
+            - `heltec_v4_companion_radio_wifi` — Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
+            - `heltec_v4_companion_radio_wifi_low_power` — Wi-Fi Companion that powers Wi-Fi off between failed reconnect attempts.
+
+            ### Repeaters and infrastructure
+            - `heltec_v4_repeater` — Standard continuously available OLED LoRa repeater.
+            - `heltec_v4_solar_repeater` — Solar repeater with 3.50 V protective shutdown, timed recovery checks, and restart at 3.65 V.
+            - `heltec_v4_solar_repeater_headless` — Solar repeater without application USB CDC or PSRAM startup for sealed unattended deployments.
+            - `heltec_v4_expansionkit_repeater` — Repeater with Heltec expansion-kit sensor and accessory-bus support.
+            - `heltec_v4_repeater_bridge_espnow` — Continuously available bridge between MeshCore LoRa and ESP-NOW.
+            - `heltec_v4_repeater_bridge_espnow_low_power` — ESP-NOW bridge with a five-second-on/twenty-five-second-off radio cycle; packets sent during an off window can be missed.
+
+            ### Services and endpoints
+            - `heltec_v4_room_server` — Shared room/BBS service that stores and distributes posts to mesh clients.
+            - `heltec_v4_terminal_chat` — Interactive MeshCore chat client operated from a USB serial terminal.
+            - `heltec_v4_sensor` — Always-on telemetry and alert node with continuous LoRa availability.
+            - `heltec_v4_sensor_low_power` — Sensor node awake for twelve seconds, then in deep sleep for fifteen minutes.
+            - `heltec_v4_kiss_modem` — USB KISS modem for external host software and custom radio integrations.
+
+            The single ZIP contains all 32 firmware images. Installation guidance
+            and all integrity hashes are centralized in `INSTALLATION.txt` and
+            `SHA256SUMS.txt`.
 
             Main changes include cooperative ESP32 idle, cached battery telemetry,
             persistent OLED/GPS power control, staged BLE advertising, Wi-Fi modem
-            sleep, optional ESP-NOW receive windows, adaptive noise calibration,
-            low-power roles and the existing FEM-aware estimated 22 dBm ceiling.
+            saving, optional ESP-NOW receive windows, adaptive noise calibration,
+            low-power roles, and the existing FEM-aware estimated 22 dBm ceiling.
 
             This remains a prerelease pending physical current, RF, sensitivity,
-            BLE/Wi-Fi/ESP-NOW and full solar-recovery validation on V4.2/GC1109
+            BLE/Wi-Fi/ESP-NOW, and complete solar-recovery validation on V4.2/GC1109
             and V4.3/KCT8103L hardware.
           files: |
             out/*-merged.bin
