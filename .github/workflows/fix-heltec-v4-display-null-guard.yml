@@ -1,0 +1,46 @@
+name: Fix Heltec V4 OLED menu null guard
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-on-device-display-control
+    paths:
+      - .github/workflows/fix-heltec-v4-display-null-guard.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+
+      - name: Add defensive home-screen guard
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("examples/companion_radio/ui-new/UITask.cpp")
+          text = path.read_text(encoding="utf-8")
+          old = "  const bool display_menu_action = curr == home &&\n      static_cast<HomeScreen *>(home)->isDisplayPage();"
+          new = "  const bool display_menu_action = home != NULL && curr == home &&\n      static_cast<HomeScreen *>(home)->isDisplayPage();"
+          if new not in text:
+              if text.count(old) != 1:
+                  raise RuntimeError(f"Expected one null-guard anchor, found {text.count(old)}")
+              text = text.replace(old, new, 1)
+              path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -q 'display_menu_action = home != NULL && curr == home' examples/companion_radio/ui-new/UITask.cpp
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add examples/companion_radio/ui-new/UITask.cpp
+          git commit -m "fix(heltec-v4): guard OLED menu screen pointer"
+          git push
