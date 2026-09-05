@@ -211,13 +211,16 @@ public:
      : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0),
        _display_off_init(false), _shutdown_init(false), sensors_lpp(200) {  }
 
-  void poll() override {
+  void processDisplayOffRelease() {
     if (_display_off_init && !_task->isButtonPressed()) {
       _display_off_init = false;
       if (!heltecV4SetDisplayEnabled(false)) {
         _task->showAlert("Display control failed", 1000);
       }
     }
+  }
+
+  void poll() override {
     if (_shutdown_init && !_task->isButtonPressed()) {  // must wait for USR button to be released
       _task->shutdown();
     }
@@ -980,6 +983,13 @@ void UITask::loop() {
 #ifdef PIN_BUZZER
   if (buzzer.isPlaying())  buzzer.loop();
 #endif
+
+  // Complete an armed OLED shutdown even if a message preview or another
+  // temporary screen became active before PRG was released. This prevents the
+  // action from remaining latent and firing later on return to the home page.
+  if (home != NULL) {
+    static_cast<HomeScreen *>(home)->processDisplayOffRelease();
+  }
 
   if (curr) curr->poll();
 
