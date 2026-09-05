@@ -19,11 +19,9 @@ MultiSerialInterface interface_manager;
 // include bluetooth interface
 #if defined(BLE_PIN_CODE)
   #ifdef ESP32
-    // include esp32 bluetooth interface
     #include <helpers/esp32/SerialBLEInterface.h>
     SerialBLEInterface bluetooth_interface;
   #elif defined(NRF52_PLATFORM)
-    // include nrf52 bluetooth interface
     #include <helpers/nrf52/SerialBLEInterface.h>
     SerialBLEInterface bluetooth_interface;
   #else
@@ -37,7 +35,6 @@ MultiSerialInterface interface_manager;
     #define TCP_PORT 5000
   #endif
   #ifdef ESP32
-    // include esp32 wifi interface
     #include <helpers/esp32/SerialWifiInterface.h>
     SerialWifiInterface wifi_interface;
   #else
@@ -111,7 +108,9 @@ void halt() {
 #if defined(ESP32) && defined(WIFI_SSID)
   #include <esp_wifi.h>
   bool wifi_needs_reconnect = false;
+  bool wifi_radio_suspended = false;
   unsigned long last_wifi_reconnect_attempt = 0;
+  unsigned long wifi_resume_at = 0;
   unsigned long wifi_reconnect_delay_ms = 10000;
 #endif
 
@@ -144,7 +143,6 @@ void setup() {
   InternalFS.begin();
   #if defined(QSPIFLASH)
     if (!QSPIFlash.begin()) {
-      // debug output might not be available at this point, might be too early. maybe should fall back to InternalFS here?
       MESH_DEBUG_PRINTLN("CustomLFS_QSPIFlash: failed to initialize");
     } else {
       MESH_DEBUG_PRINTLN("CustomLFS_QSPIFlash: initialized successfully");
@@ -194,16 +192,22 @@ void setup() {
 
 // add wifi interface
 #ifdef WIFI_SSID
-  board.setInhibitSleep(true);   // prevent sleep when WiFi is active
+  board.setInhibitSleep(true);   // prevent generic sleep while Wi-Fi owns the radio
+#if defined(HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF) && HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF
+  WiFi.setAutoReconnect(false);
+#else
   WiFi.setAutoReconnect(true);
+#endif
 
   WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info){
+      (void)info;
       if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
           WIFI_DEBUG_PRINTLN("WiFi disconnected. Flagging for reconnect...");
           wifi_needs_reconnect = true;
       } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
           WIFI_DEBUG_PRINTLN("WiFi connected successfully!");
           wifi_needs_reconnect = false;
+          wifi_radio_suspended = false;
           wifi_reconnect_delay_ms = 10000;
       }
   });
@@ -249,7 +253,7 @@ void setup() {
 #endif
 
 #ifdef DISPLAY_CLASS
-  ui_task.begin(disp, &sensors, the_mesh.getNodePrefs());  // still want to pass this in as dependency, as prefs might be moved
+  ui_task.begin(disp, &sensors, the_mesh.getNodePrefs());
 #endif
 
   board.onBootComplete();
@@ -270,25 +274,44 @@ void loop() {
 
   if (!the_mesh.hasPendingWork()) {
 #if defined(NRF52_PLATFORM)
-    board.sleep(0); // nrf ignores seconds param, sleeps whenever possible
+    board.sleep(0); // nRF ignores seconds param, sleeps whenever possible
 #endif
   }
 
 #if defined(ESP32) && defined(WIFI_SSID)
-  // Safely attempt to reconnect every 10 seconds if flagged
+#if defined(HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF) && HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF
+  // The explicit low-power Wi-Fi target turns the radio fully off between
+  // attempts. It is intentionally unavailable while suspended.
+  if (wifi_needs_reconnect) {
+    const unsigned long now = millis();
+    if (!wifi_radio_suspended) {
+      wifi_radio_suspended = true;
+      wifi_resume_at = now + wifi_reconnect_delay_ms;
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+    } else if (static_cast<long>(now - wifi_resume_at) >= 0) {
+      WIFI_DEBUG_PRINTLN("Powering WiFi for a reconnect attempt...");
+      WiFi.mode(WIFI_STA);
+      WiFi.setSleep(true);
+      esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
+      wifi_needs_reconnect = false; // a new disconnect event schedules the next attempt
+      wifi_radio_suspended = false;
+      last_wifi_reconnect_attempt = now;
+      WiFi.begin(WIFI_SSID, WIFI_PWD);
+      wifi_interface.begin(TCP_PORT);
+      wifi_reconnect_delay_ms = min(wifi_reconnect_delay_ms * 2UL, 900000UL);
+    }
+  }
+#else
   if (wifi_needs_reconnect &&
       (millis() - last_wifi_reconnect_attempt > wifi_reconnect_delay_ms)) {
     WIFI_DEBUG_PRINTLN("Attempting manual WiFi reconnect...");
     WiFi.disconnect();
     WiFi.reconnect();
     last_wifi_reconnect_attempt = millis();
-#if defined(HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF) && HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF
-    const unsigned long max_backoff = 900000;
-#else
-    const unsigned long max_backoff = 300000;
-#endif
-    wifi_reconnect_delay_ms = min(wifi_reconnect_delay_ms * 2UL, max_backoff);
+    wifi_reconnect_delay_ms = min(wifi_reconnect_delay_ms * 2UL, 300000UL);
   }
+#endif
 #endif
 
   board.idle();
