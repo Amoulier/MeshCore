@@ -1,0 +1,81 @@
+name: Adjust Heltec V4 OLED menu rescue handling
+
+on:
+  push:
+    branches:
+      - feature/heltec-v4-on-device-display-control
+    paths:
+      - .github/workflows/adjust-heltec-v4-display-rescue.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+
+      - name: Keep OLED menu action available during startup window
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("examples/companion_radio/ui-new/UITask.cpp")
+          text = path.read_text(encoding="utf-8")
+
+          old_method = '''  bool handleInput(char c) override {
+    if (c == KEY_LEFT || c == KEY_PREV) {'''
+          new_method = '''  bool isDisplayPage() const { return _page == HomePage::DISPLAY; }
+
+  bool handleInput(char c) override {
+    if (c == KEY_LEFT || c == KEY_PREV) {'''
+
+          old_handler = '''char UITask::handleLongPress(char c) {
+  if (millis() - ui_started_at < 8000) {   // long press in first 8 seconds since startup -> CLI/rescue
+    the_mesh.enterCLIRescue();
+    c = 0;   // consume event
+  }
+  return c;
+}'''
+          new_handler = '''char UITask::handleLongPress(char c) {
+  const bool display_menu_action = curr == home &&
+      static_cast<HomeScreen *>(home)->isDisplayPage();
+  if (millis() - ui_started_at < 8000 && !display_menu_action) {
+    // Preserve the original startup CLI/rescue gesture everywhere except the
+    // explicit OLED menu, where the user's selected action takes precedence.
+    the_mesh.enterCLIRescue();
+    c = 0;
+  }
+  return c;
+}'''
+
+          if new_method not in text:
+              if text.count(old_method) != 1:
+                  raise RuntimeError("HomeScreen input method anchor not unique")
+              text = text.replace(old_method, new_method, 1)
+          if new_handler not in text:
+              if text.count(old_handler) != 1:
+                  raise RuntimeError("Long-press handler anchor not unique")
+              text = text.replace(old_handler, new_handler, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate focused change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -q 'bool isDisplayPage() const' examples/companion_radio/ui-new/UITask.cpp
+          grep -q 'millis() - ui_started_at < 8000 && !display_menu_action' examples/companion_radio/ui-new/UITask.cpp
+
+      - name: Commit focused change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add examples/companion_radio/ui-new/UITask.cpp
+          git commit -m "fix(heltec-v4): prioritize OLED menu over startup rescue"
+          git push
