@@ -9,14 +9,6 @@ namespace {
 constexpr const char *DISPLAY_PREFS_NAMESPACE = "meshcore_v4";
 constexpr const char *DISPLAY_DISABLED_KEY = "display_off";
 
-constexpr bool keepAccessoryRailPowered()
-{
-#if defined(HELTEC_V4_KEEP_ACCESSORY_RAIL_ON) && HELTEC_V4_KEEP_ACCESSORY_RAIL_ON
-  return true;
-#else
-  return false;
-#endif
-}
 }
 
 bool SSD1306Display::i2c_probe(TwoWire &wire, uint8_t addr)
@@ -81,7 +73,7 @@ bool SSD1306Display::initializePanel()
 
   const bool started = display.begin(SSD1306_SWITCHCAPVCC, DISPLAY_ADDRESS, true, false);
   if (!started || !i2c_probe(Wire, DISPLAY_ADDRESS)) {
-    if (_peripher_power && _railClaimed && !keepAccessoryRailPowered()) {
+    if (_peripher_power && _railClaimed) {
       _peripher_power->release();
       _railClaimed = false;
     }
@@ -104,7 +96,7 @@ void SSD1306Display::powerDownPanel()
   pinMode(PIN_OLED_RESET, OUTPUT);
   digitalWrite(PIN_OLED_RESET, LOW);
 #endif
-  if (_peripher_power && _railClaimed && !keepAccessoryRailPowered()) {
+  if (_peripher_power && _railClaimed) {
     _peripher_power->release();
     _railClaimed = false;
   }
@@ -120,10 +112,6 @@ bool SSD1306Display::begin()
   }
 
   if (_persistentlyDisabled) {
-    if (_peripher_power && !_railClaimed && keepAccessoryRailPowered()) {
-      _peripher_power->claim();
-      _railClaimed = true;
-    }
     powerDownPanel();
     return true;
   }

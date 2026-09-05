@@ -2,6 +2,13 @@
 
 /* ------------------------------ Config -------------------------------- */
 
+#ifndef DEFAULT_ADVERT_INTERVAL
+#define DEFAULT_ADVERT_INTERVAL 1
+#endif
+#ifndef DEFAULT_POWERSAVING_ENABLED
+#define DEFAULT_POWERSAVING_ENABLED 0
+#endif
+
 #ifndef LORA_FREQ
   #define LORA_FREQ   915.0
 #endif
@@ -723,7 +730,7 @@ SensorMesh::SensorMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh::Millise
   _prefs.bw = LORA_BW;
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
-  _prefs.advert_interval = 1;  // default to 2 minutes for NEW installs
+  _prefs.advert_interval = DEFAULT_ADVERT_INTERVAL;  // default to 2 minutes for NEW installs
   _prefs.flood_advert_interval = 0;   // disabled
   _prefs.disable_fwd = true;
   _prefs.flood_max = 64;

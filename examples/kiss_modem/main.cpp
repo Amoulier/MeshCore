@@ -155,4 +155,5 @@ void loop() {
     next_noise_floor_calib_ms = millis();
   }
   radio_driver.loop();
+  board.idle();
 }

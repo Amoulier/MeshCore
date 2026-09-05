@@ -42,3 +42,10 @@ heltec-v4-vX.Y.Z
 ```
 
 This project is an independent hardware-focused fork and releases must not be represented as official MeshCore builds.
+
+## Energy release
+
+Create a branch named `release/heltec-v4-energy-vX.Y.Z-rcN` from the audited
+commit. The energy release workflow builds every retained environment and
+publishes checksummed `-ota.bin` and `-merged.bin` assets. The OTA image must not
+be flashed at address `0x0`; the merged image is the complete image for `0x0`.

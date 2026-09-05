@@ -92,6 +92,8 @@ TEST(HeltecV4RadioPower, CapsLegacyRadioInputByDetectedFem)
   EXPECT_EQ(22, gc1109EstimatedOutput(11));
   EXPECT_EQ(22, kct8103lEstimatedOutput(9));
   EXPECT_EQ(21, gc1109EstimatedOutput(10));
+  EXPECT_EQ(22, gc1109EstimatedOutput(clampGc1109RadioInput(11, 22)));
+  EXPECT_EQ(22, kct8103lEstimatedOutput(clampKct8103lRadioInput(11, 22)));
 }
 
 int main(int argc, char **argv)

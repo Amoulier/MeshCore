@@ -1,5 +1,12 @@
 #include "MyMesh.h"
 
+#ifndef DEFAULT_ADVERT_INTERVAL
+#define DEFAULT_ADVERT_INTERVAL 1
+#endif
+#ifndef DEFAULT_POWERSAVING_ENABLED
+#define DEFAULT_POWERSAVING_ENABLED 0
+#endif
+
 #define REPLY_DELAY_MILLIS          1500
 #define PUSH_NOTIFY_DELAY_MILLIS    2000
 #define SYNC_PUSH_INTERVAL          1200
@@ -658,7 +665,7 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
   _prefs.disable_fwd = 1;
-  _prefs.advert_interval = 1;        // default to 2 minutes for NEW installs
+  _prefs.advert_interval = DEFAULT_ADVERT_INTERVAL;        // default to 2 minutes for NEW installs
   _prefs.flood_advert_interval = 47; // 47 hours
   _prefs.flood_max = 64;
   _prefs.flood_max_unscoped = 64;

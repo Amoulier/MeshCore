@@ -109,13 +109,15 @@ void halt() {
 
 /* WIFI RECONNECT TRACKERS */
 #if defined(ESP32) && defined(WIFI_SSID)
+  #include <esp_wifi.h>
   bool wifi_needs_reconnect = false;
   unsigned long last_wifi_reconnect_attempt = 0;
+  unsigned long wifi_reconnect_delay_ms = 10000;
 #endif
 
 void setup() {
-  Serial.begin(115200);
   board.begin();
+  Serial.begin(115200);
 
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.begin();
@@ -202,9 +204,18 @@ void setup() {
       } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
           WIFI_DEBUG_PRINTLN("WiFi connected successfully!");
           wifi_needs_reconnect = false;
+          wifi_reconnect_delay_ms = 10000;
       }
   });
 
+  WiFi.setSleep(true);
+#if defined(HELTEC_V4_WIFI_POWER_SAVE) && HELTEC_V4_WIFI_POWER_SAVE
+  #if defined(HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF) && HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF
+  esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
+  #else
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+  #endif
+#endif
   WiFi.begin(WIFI_SSID, WIFI_PWD);
   wifi_interface.begin(TCP_PORT);
   interface_manager.addInterface(InterfaceType::WiFi, &wifi_interface);
@@ -265,11 +276,20 @@ void loop() {
 
 #if defined(ESP32) && defined(WIFI_SSID)
   // Safely attempt to reconnect every 10 seconds if flagged
-  if (wifi_needs_reconnect && (millis() - last_wifi_reconnect_attempt > 10000)) {
+  if (wifi_needs_reconnect &&
+      (millis() - last_wifi_reconnect_attempt > wifi_reconnect_delay_ms)) {
     WIFI_DEBUG_PRINTLN("Attempting manual WiFi reconnect...");
     WiFi.disconnect();
     WiFi.reconnect();
     last_wifi_reconnect_attempt = millis();
+#if defined(HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF) && HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF
+    const unsigned long max_backoff = 900000;
+#else
+    const unsigned long max_backoff = 300000;
+#endif
+    wifi_reconnect_delay_ms = min(wifi_reconnect_delay_ms * 2UL, max_backoff);
   }
 #endif
+
+  board.idle();
 }

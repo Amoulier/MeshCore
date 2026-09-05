@@ -12,8 +12,14 @@ namespace mesh {
 #define MIN_TX_BUDGET_RESERVE_MS   100    // min budget (ms) required before allowing next TX
 #define MIN_TX_BUDGET_AIRTIME_DIV  2      // require at least 1/N of estimated airtime as budget before TX
 
-#ifndef NOISE_FLOOR_CALIB_INTERVAL
-  #define NOISE_FLOOR_CALIB_INTERVAL   2000     // 2 seconds
+#ifndef NOISE_FLOOR_CALIB_FAST_INTERVAL
+  #define NOISE_FLOOR_CALIB_FAST_INTERVAL 2000UL
+#endif
+#ifndef NOISE_FLOOR_CALIB_STABLE_INTERVAL
+  #define NOISE_FLOOR_CALIB_STABLE_INTERVAL 30000UL
+#endif
+#ifndef NOISE_FLOOR_CALIB_FAST_DURATION
+  #define NOISE_FLOOR_CALIB_FAST_DURATION 60000UL
 #endif
 
 void Dispatcher::begin() {
@@ -21,6 +27,7 @@ void Dispatcher::begin() {
   n_recv_flood = n_recv_direct = 0;
   _err_flags = 0;
   radio_nonrx_start = _ms->getMillis();
+  floor_calib_started_at = radio_nonrx_start;
 
   duty_cycle_window_ms = getDutyCycleWindowMs();
   float duty_cycle = 1.0f / (1.0f + getAirtimeBudgetFactor());
@@ -67,7 +74,11 @@ void Dispatcher::loop() {
   if (millisHasNowPassed(next_floor_calib_time)) {
     _radio->triggerNoiseFloorCalibrate(getInterferenceThreshold());
     _radio->setCADEnabled(getCADEnabled());
-    next_floor_calib_time = futureMillis(NOISE_FLOOR_CALIB_INTERVAL);
+    const unsigned long age = _ms->getMillis() - floor_calib_started_at;
+    const unsigned long interval = age < NOISE_FLOOR_CALIB_FAST_DURATION
+        ? NOISE_FLOOR_CALIB_FAST_INTERVAL
+        : NOISE_FLOOR_CALIB_STABLE_INTERVAL;
+    next_floor_calib_time = futureMillis(interval);
   }
   _radio->loop();
 

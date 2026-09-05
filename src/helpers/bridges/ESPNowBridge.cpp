@@ -2,6 +2,7 @@
 
 #include <WiFi.h>
 #include <esp_wifi.h>
+#include <esp_idf_version.h>
 
 #ifdef WITH_ESPNOW_BRIDGE
 
@@ -43,6 +44,13 @@ void ESPNowBridge::begin() {
     BRIDGE_DEBUG_PRINTLN("Error initializing ESP-NOW\n");
     return;
   }
+
+#if defined(HELTEC_V4_ESPNOW_LOW_POWER) && HELTEC_V4_ESPNOW_LOW_POWER && \
+    ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+  esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
+  esp_now_set_wake_window(HELTEC_V4_ESPNOW_WAKE_WINDOW_MS);
+  esp_wifi_connectionless_module_set_wake_interval(HELTEC_V4_ESPNOW_WAKE_INTERVAL_MS);
+#endif
 
   // Register callbacks
   esp_now_register_recv_cb(recv_cb);

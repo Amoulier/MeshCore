@@ -28,7 +28,10 @@ static char ethernet_command[160];
 #endif
 
 // For power saving
-unsigned long POWERSAVING_FIRSTSLEEP_SECS = 120; // The first sleep (if enabled) from boot
+#ifndef POWERSAVING_FIRSTSLEEP_SECS
+#define POWERSAVING_FIRSTSLEEP_SECS 120
+#endif
+static constexpr unsigned long kPowerSavingFirstSleepSecs = POWERSAVING_FIRSTSLEEP_SECS;
 
 #if defined(PIN_USER_BTN) && defined(_SEEED_SENSECAP_SOLAR_H_)
 static unsigned long userBtnDownAt = 0;
@@ -36,10 +39,8 @@ static unsigned long userBtnDownAt = 0;
 #endif
 
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
-
   board.begin();
+  Serial.begin(115200);
 
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.begin();
@@ -200,9 +201,10 @@ void loop() {
 #if defined(NRF52_PLATFORM)
     board.sleep(0); // nrf ignores seconds param, sleeps whenever possible
 #else
-    if (the_mesh.millisHasNowPassed(POWERSAVING_FIRSTSLEEP_SECS * 1000)) { // To check if it is time to sleep
+    if (the_mesh.millisHasNowPassed(kPowerSavingFirstSleepSecs * 1000)) { // To check if it is time to sleep
       board.sleep(30); // Sleep. Wake up after a while or when receiving a LoRa packet
     }
 #endif
   }
+  board.idle();
 }
