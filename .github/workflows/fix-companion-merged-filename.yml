@@ -1,0 +1,93 @@
+name: Fix Companion merged firmware filename
+
+on:
+  push:
+    branches:
+      - fix/companion-merged-filename
+    paths:
+      - .github/workflows/fix-companion-merged-filename.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out hotfix branch
+        uses: actions/checkout@v6
+
+      - name: Correct package names and flasher safety checks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/heltec-v4-companion-validation.yml')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = {
+              '"out/${package}-factory.bin"': '"out/${package}-merged.bin"',
+              'sha256sum "${package}-ota.bin" "${package}-factory.bin"': 'sha256sum "${package}-ota.bin" "${package}-merged.bin"',
+              '${package}-factory.bin\n            Complete fresh-install image. Flash at address 0x0 on ESP32-S3.\n            This is the recommended file for the first installation.': '${package}-merged.bin\n            Complete fresh-install image. Flash at address 0x0 on ESP32-S3.\n            Keep the -merged.bin suffix: the MeshCore Custom Firmware flasher\n            uses that suffix to select address 0x0 and enable a full-flash write.\n            This is the recommended file for the first installation.',
+              '- \\`*-factory.bin\\`: complete fresh-install image for ESP32-S3, flashed at address \\`0x0\\`.': '- \\`*-merged.bin\\`: complete fresh-install image for ESP32-S3. Keep this exact suffix so the MeshCore Custom Firmware flasher selects address \\`0x0\\`.',
+          }
+
+          for old, new in replacements.items():
+              if old not in text:
+                  raise RuntimeError(f'Missing expected packaging text: {old!r}')
+              text = text.replace(old, new)
+
+          validation_anchor = '''          test -s .pio/build/heltec_v4_companion_radio_ble/firmware.bin
+          test -s .pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin
+'''
+          validation_replacement = '''          test -s .pio/build/heltec_v4_companion_radio_ble/firmware.bin
+          test -s .pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin
+
+          # A complete ESP32-S3 image must contain an ESP image header both at
+          # offset 0x0 (bootloader) and 0x10000 (application). This guards
+          # against publishing an application-only file as a merged image.
+          test "$(od -An -tx1 -N1 .pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin | tr -d ' ')" = "e9"
+          test "$(od -An -tx1 -j65536 -N1 .pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin | tr -d ' ')" = "e9"
+'''
+          if validation_anchor not in text:
+              raise RuntimeError('Missing merged-image validation anchor')
+          text = text.replace(validation_anchor, validation_replacement, 1)
+
+          warning_anchor = '''          This remains validation firmware and still requires physical RF,
+          current-consumption, BLE longevity and persistence testing before a
+          stable production release.
+'''
+          warning_replacement = '''          ### Important flasher warning
+
+          Do not rename the complete image to \\`*-factory.bin\\`. The current
+          MeshCore Custom Firmware flasher recognizes a complete image by the
+          exact \\`-merged.bin\\` suffix; another suffix is treated as an
+          application image and may be written at \\`0x10000\\`, causing a boot loop.
+
+          This remains validation firmware and still requires physical RF,
+          current-consumption, BLE longevity and persistence testing before a
+          stable production release.
+'''
+          if warning_anchor not in text:
+              raise RuntimeError('Missing release warning anchor')
+          text = text.replace(warning_anchor, warning_replacement, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate and commit hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          file=.github/workflows/heltec-v4-companion-validation.yml
+          test "$(grep -c -- '-factory.bin' "$file" || true)" -eq 0
+          grep -q -- '-merged.bin' "$file"
+          grep -q 'offset 0x0 (bootloader) and 0x10000 (application)' "$file"
+          grep -q 'may be written at' "$file"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$file"
+          git commit -m "fix(release): preserve merged suffix for ESP32 full image"
+          git push
