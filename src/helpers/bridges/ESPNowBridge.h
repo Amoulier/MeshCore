@@ -18,6 +18,7 @@
  * - Network isolation using XOR encryption with shared secret
  * - Duplicate packet detection using SimpleMeshTables tracking
  * - Maximum packet size of 250 bytes (ESP-NOW limitation)
+ * - Optional explicit radio duty cycle for battery deployments
  *
  * Packet Structure:
  * [2 bytes] Magic Header - Used to identify ESPNowBridge packets
@@ -33,6 +34,7 @@
  * Configuration:
  * - Define WITH_ESPNOW_BRIDGE to enable this bridge
  * - Define _prefs->bridge_secret with a string to set the network encryption key
+ * - Define HELTEC_V4_ESPNOW_DUTY_CYCLE for the explicit low-power variant
  *
  * Network Isolation:
  * Multiple independent mesh networks can coexist by using different
@@ -58,99 +60,36 @@ private:
    */
   static const size_t MAX_ESPNOW_PACKET_SIZE = 250;
 
-  /**
-   * Size constants for packet parsing
-   */
+  /** Size constants for packet parsing. */
   static const size_t MAX_PAYLOAD_SIZE = MAX_ESPNOW_PACKET_SIZE - (BRIDGE_MAGIC_SIZE + BRIDGE_CHECKSUM_SIZE);
 
-  /** Buffer for receiving ESP-NOW packets */
+  /** Buffer retained for compatibility with the existing bridge layout. */
   uint8_t _rx_buffer[MAX_ESPNOW_PACKET_SIZE];
-
-  /** Current position in receive buffer */
   size_t _rx_buffer_pos;
 
-  /**
-   * Performs XOR encryption/decryption of data
-   * Used to isolate different mesh networks
-   *
-   * Uses _prefs->bridge_secret as the key in a simple XOR operation.
-   * The same operation is used for both encryption and decryption.
-   * While not cryptographically secure, it provides basic network isolation.
-   *
-   * @param data Pointer to data to encrypt/decrypt
-   * @param len Length of data in bytes
-   */
+  /** Explicit low-power duty-cycle state. */
+  unsigned long _duty_cycle_deadline;
+  bool _duty_cycle_sleeping;
+
   void xorCrypt(uint8_t *data, size_t len);
-
-  /**
-   * ESP-NOW receive callback
-   * Called by ESP-NOW when a packet is received
-   *
-   * @param mac Source MAC address
-   * @param data Received data
-   * @param len Length of received data
-   */
   void onDataRecv(const uint8_t *mac, const uint8_t *data, int32_t len);
-
-  /**
-   * ESP-NOW send callback
-   * Called by ESP-NOW after a transmission attempt
-   *
-   * @param mac_addr Destination MAC address
-   * @param status Transmission status
-   */
   void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
+  void extendDutyCycleWindow();
+  void scheduleDutyCycleSleep();
 
 public:
-  /**
-   * Constructs an ESPNowBridge instance
-   *
-   * @param prefs Node preferences for configuration settings
-   * @param mgr PacketManager for allocating and queuing packets
-   * @param rtc RTCClock for timestamping debug messages
-   */
   ESPNowBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCClock *rtc);
 
-  /**
-   * Initializes the ESP-NOW bridge
-   *
-   * - Configures WiFi in station mode
-   * - Initializes ESP-NOW protocol
-   * - Registers callbacks
-   * - Sets up broadcast peer
-   */
+  /** Configures Wi-Fi station mode, ESP-NOW callbacks and the broadcast peer. */
   void begin() override;
 
-  /**
-   * Stops the ESP-NOW bridge
-   *
-   * - Removes broadcast peer
-   * - Unregisters callbacks
-   * - Deinitializes ESP-NOW protocol
-   * - Turns off WiFi to release radio resources
-   */
+  /** Deinitializes ESP-NOW and powers the Wi-Fi radio off. */
   void end() override;
 
-  /**
-   * Main loop handler
-   * ESP-NOW is callback-based, so this is currently empty
-   */
+  /** Maintains the optional explicit listen/sleep duty cycle. */
   void loop() override;
 
-  /**
-   * Called when a packet is received via ESP-NOW
-   * Queues the packet for mesh processing if not seen before
-   *
-   * @param packet The received mesh packet
-   */
   void onPacketReceived(mesh::Packet *packet) override;
-
-  /**
-   * Called when a packet needs to be transmitted via ESP-NOW
-   * Encrypts and broadcasts the packet if not seen before
-   *
-   * @param packet The mesh packet to transmit
-   */
   void sendPacket(mesh::Packet *packet) override;
 };
 
