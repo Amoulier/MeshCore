@@ -1058,7 +1058,7 @@ char UITask::checkDisplayOn(char c) {
 }
 
 char UITask::handleLongPress(char c) {
-  const bool display_menu_action = curr == home &&
+  const bool display_menu_action = home != NULL && curr == home &&
       static_cast<HomeScreen *>(home)->isDisplayPage();
   if (millis() - ui_started_at < 8000 && !display_menu_action) {
     // Preserve the startup CLI/rescue gesture everywhere except the explicit
