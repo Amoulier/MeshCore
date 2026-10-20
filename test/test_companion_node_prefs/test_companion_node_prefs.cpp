@@ -114,7 +114,7 @@ TEST(CompanionNodePrefs, RejectsInvalidAirtimeWithoutChangingSavedValue) {
   prefs.airtime_factor = 1;
   char reply[160];
   for (const char* command : {"set af nan", "set af inf", "set af -1",
-                            "set af 10", "set af 1garbage", "set af "}) {
+                            "set af 10", "set af 1garbage", "set af ", "set af    "}) {
     ASSERT_TRUE(prefs.getRadioPrefs()->handleCommand(command, 0, reply));
     EXPECT_EQ(0, strncmp(reply, "ERROR", 5));
     EXPECT_FLOAT_EQ(1, prefs.airtime_factor);

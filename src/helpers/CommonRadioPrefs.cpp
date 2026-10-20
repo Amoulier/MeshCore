@@ -71,8 +71,9 @@ bool CommonRadioPrefs::handleCommand(const char* command, uint32_t sender_timest
   if (memcmp(command, "set af ", 7) == 0) {
     char* end;
     float af = strtof(&command[7], &end);
+    const bool parsed = end != &command[7];
     while (isspace(static_cast<unsigned char>(*end))) ++end;
-    if (end == &command[7] || *end != '\0' || !isfinite(af) || af < 0 || af > 9) {
+    if (!parsed || *end != '\0' || !isfinite(af) || af < 0 || af > 9) {
       strcpy(reply, "ERROR: af must be 0-9");
     } else {
       setAirtimeFactor(af);
