@@ -311,6 +311,19 @@ TEST(DynamicConfigSerializer, LoadCustom_Basic) {
     EXPECT_STREQ("Scott", tmp);
 }
 
+TEST(DynamicConfigSerializer, DigitKeysDoNotDiscardFollowingPreferences) {
+    DynamicConfigSerializer data;
+    MockInputStream input("{gr_1hop:\"1\",rxgain:\"0\",fem_rxgain:\"1\"}");
+    ASSERT_TRUE(data.loadSerial(input));
+    char value[16];
+    ASSERT_TRUE(data.getByKey("gr_1hop", value, sizeof(value)));
+    EXPECT_STREQ("1", value);
+    ASSERT_TRUE(data.getByKey("rxgain", value, sizeof(value)));
+    EXPECT_STREQ("0", value);
+    ASSERT_TRUE(data.getByKey("fem_rxgain", value, sizeof(value)));
+    EXPECT_STREQ("1", value);
+}
+
 // ── main ───────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {

@@ -2,6 +2,8 @@
 #include "TxtDataHelpers.h"
 #include "Utils.h"
 #include "target.h"
+#include <ctype.h>
+#include <math.h>
 
 bool CommonRadioPrefs::getByKey(const char* key, char* value, size_t max_len) {
   if (strcmp(key, "fem_rxgain") == 0) {
@@ -67,8 +69,15 @@ bool CommonRadioPrefs::handleCommand(const char* command, uint32_t sender_timest
     return true;
   }
   if (memcmp(command, "set af ", 7) == 0) {
-    setAirtimeFactor(atof(&command[7]));
-    strcpy(reply, "OK");
+    char* end;
+    float af = strtof(&command[7], &end);
+    while (isspace(static_cast<unsigned char>(*end))) ++end;
+    if (end == &command[7] || *end != '\0' || !isfinite(af) || af < 0 || af > 9) {
+      strcpy(reply, "ERROR: af must be 0-9");
+    } else {
+      setAirtimeFactor(af);
+      strcpy(reply, "OK");
+    }
     return true;
   }
 
@@ -159,7 +168,9 @@ bool CommonRadioPrefs::handleCommand(const char* command, uint32_t sender_timest
     return true;
   }
   if (memcmp(command, "set agc.reset.interval ", 23) == 0) {
-    setAgcResetInt(atoi(&command[23]));
+    int secs = atoi(&command[23]);
+    secs = constrain(secs, 0, 255 * 4);
+    setAgcResetInt((uint16_t) secs);
     sprintf(reply, "OK - interval rounded to %d", (uint32_t) getAgcResetInt());
     return true;
   }
