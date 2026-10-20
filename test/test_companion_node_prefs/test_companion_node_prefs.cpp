@@ -5,6 +5,15 @@
 #include <string>
 
 #include "../../examples/companion_radio/NodePrefs.h"
+#include "../../src/helpers/CommonRadioPrefs.cpp"
+
+// Formatting boundary: run the real command parser without Arduino's ltoa.
+const char* StrHelper::ftoa(float value) {
+  static char buffer[32];
+  snprintf(buffer, sizeof(buffer), "%g", static_cast<double>(value));
+  return buffer;
+}
+const char* StrHelper::ftoa3(float value) { return ftoa(value); }
 
 class ReplayStream : public Stream {
   const char* _text;
@@ -76,6 +85,54 @@ TEST(CompanionNodePrefs, RxGainSettingsRoundTripIndependently) {
   EXPECT_EQ(1, loaded.radio_fem_txgain);
 }
 #endif
+
+TEST(CompanionNodePrefs, LegacySettingsKeepRadioDelaysAndFemSeparate) {
+  NodePrefs loaded;
+  loaded.tx_delay_factor = 0.5f;
+  loaded.direct_tx_delay_factor = 0.2f;
+  ReplayStream input("{radio:{tx:11,rxgain:0,fem_rxgain:1},custom:{},gps:{en:0}}");
+  ASSERT_TRUE(loaded.loadSerial(input));
+  EXPECT_FLOAT_EQ(0.5f, loaded.tx_delay_factor);
+  EXPECT_FLOAT_EQ(0.2f, loaded.direct_tx_delay_factor);
+  EXPECT_EQ(11, loaded.tx_power_dbm);
+  EXPECT_EQ(0, loaded.rx_boosted_gain);
+  EXPECT_EQ(1, loaded.radio_fem_rxgain);
+  EXPECT_EQ(0, loaded.gps_enabled);
+}
+
+TEST(CompanionNodePrefs, AgcIntervalSupportsMoreThan255Seconds) {
+  NodePrefs prefs;
+  auto* radio = prefs.getRadioPrefs();
+  radio->setAgcResetInt(1020);
+  EXPECT_EQ(1020, radio->getAgcResetInt());
+  radio->setAgcResetInt(259);
+  EXPECT_EQ(256, radio->getAgcResetInt());
+}
+
+TEST(CompanionNodePrefs, RejectsInvalidAirtimeWithoutChangingSavedValue) {
+  NodePrefs prefs;
+  prefs.airtime_factor = 1;
+  char reply[160];
+  for (const char* command : {"set af nan", "set af inf", "set af -1",
+                            "set af 10", "set af 1garbage", "set af ", "set af    "}) {
+    ASSERT_TRUE(prefs.getRadioPrefs()->handleCommand(command, 0, reply));
+    EXPECT_EQ(0, strncmp(reply, "ERROR", 5));
+    EXPECT_FLOAT_EQ(1, prefs.airtime_factor);
+  }
+  ASSERT_TRUE(prefs.getRadioPrefs()->handleCommand("set af 2.5 ", 0, reply));
+  EXPECT_STREQ("OK", reply);
+  EXPECT_FLOAT_EQ(2.5f, prefs.airtime_factor);
+}
+
+TEST(CompanionNodePrefs, AgcCommandsClampBeforeNarrowing) {
+  NodePrefs prefs;
+  char reply[160];
+  auto* radio = prefs.getRadioPrefs();
+  ASSERT_TRUE(radio->handleCommand("set agc.reset.interval 9999", 0, reply));
+  EXPECT_EQ(1020, radio->getAgcResetInt());
+  ASSERT_TRUE(radio->handleCommand("set agc.reset.interval -1", 0, reply));
+  EXPECT_EQ(0, radio->getAgcResetInt());
+}
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);

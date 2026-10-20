@@ -185,6 +185,47 @@ TEST(ConfigSerializer, LoadSerial_IgnoreUnknowns) {
     EXPECT_TRUE(match);
 }
 
+class TestNested : public ConfigSerializer {
+    class Inner : public ConfigSerializer {
+      protected:
+        void structure() override { }   // no properties, so it writes as '{}'
+    };
+    Inner inner;
+  protected:
+    void structure() override {
+        def("age", age);
+        def("inner", inner);
+        def("name", name, sizeof(name));   // comes *after* the empty sub-object
+    }
+  public:
+    int32_t age;
+    char    name[16];
+};
+
+TEST(ConfigSerializer, LoadSerial_EmptyObject) {
+    MockInputStream s("{age:" TEST_INT_S ",inner:{},name:\"Scott\"}");
+    TestNested data;
+    data.name[0] = 0;
+
+    bool success = data.loadSerial(s);
+    EXPECT_TRUE(success);
+
+    EXPECT_EQ(TEST_INT, data.age);
+    bool match = strcmp("Scott", data.name) == 0;
+    EXPECT_TRUE(match);   // properties after an empty object must still load
+}
+
+TEST(ConfigSerializer, LoadSerial_EmptyObjectWithWhitespace) {
+    MockInputStream s("{age:" TEST_INT_S ",inner:{  },name:\"Scott\"}");
+    TestNested data;
+    data.name[0] = 0;
+
+    bool success = data.loadSerial(s);
+    EXPECT_TRUE(success);
+    bool match = strcmp("Scott", data.name) == 0;
+    EXPECT_TRUE(match);
+}
+
 TEST(DynamicConfigSerializer, GetSet_Basic) {
     DynamicConfigSerializer data;
 
@@ -268,6 +309,19 @@ TEST(DynamicConfigSerializer, LoadCustom_Basic) {
     bool g2 = data.getByKey("name", tmp, 31);
     EXPECT_TRUE(g2);
     EXPECT_STREQ("Scott", tmp);
+}
+
+TEST(DynamicConfigSerializer, DigitKeysDoNotDiscardFollowingPreferences) {
+    DynamicConfigSerializer data;
+    MockInputStream input("{gr_1hop:\"1\",rxgain:\"0\",fem_rxgain:\"1\"}");
+    ASSERT_TRUE(data.loadSerial(input));
+    char value[16];
+    ASSERT_TRUE(data.getByKey("gr_1hop", value, sizeof(value)));
+    EXPECT_STREQ("1", value);
+    ASSERT_TRUE(data.getByKey("rxgain", value, sizeof(value)));
+    EXPECT_STREQ("0", value);
+    ASSERT_TRUE(data.getByKey("fem_rxgain", value, sizeof(value)));
+    EXPECT_STREQ("1", value);
 }
 
 // ── main ───────────────────────────────────────────────────────
