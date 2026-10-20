@@ -108,6 +108,8 @@ Use the standard Solar Repeater when a runtime USB console is needed. The option
 
 `heltec_v4_sensor_low_power` enables the accessory rail, samples and services queued work during a twelve-second wake window, then deep sleeps for fifteen minutes. Its OLED defaults off, periodic advertisement timer is disabled, and USB CDC/PSRAM startup features are removed. It is intentionally not continuously reachable.
 
+BLE Companion builds also support optional Wi-Fi configured through the Companion CLI. Wi-Fi stays off without credentials; saved network changes apply after reboot. See the connectivity and telemetry integration section in `docs/HELTEC_V4_ENERGY_OPTIMIZATION.md`.
+
 ## Operational commands
 
 The existing MeshCore CLI accepts these Heltec V4 additions:

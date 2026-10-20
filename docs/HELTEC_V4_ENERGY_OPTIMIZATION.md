@@ -142,7 +142,49 @@ so the profile command reports that its external receive path is fixed.
 - Standard variants remain available beside every connectivity variant that
   intentionally trades availability for energy.
 
-## Validation boundary
+## Selective upstream connectivity and telemetry integration
+
+The BLE Companion variants also provide an optional Wi-Fi/TCP interface. On a
+fresh BLE installation no SSID is configured, so the Wi-Fi radio and TCP server
+are not started. The Wi-Fi-only variants retain their compile-time fallback
+credentials. Stored credentials take precedence over those build defaults.
+
+```text
+set wifi.ssid network-name
+set wifi.pwd network-password
+set wifi.enabled 1
+reboot
+get wifi.status
+get wifi.ip
+```
+
+Credential and enable changes take effect after reboot. `set wifi.clear` removes
+stored credentials and restores the build defaults. `get wifi.pwd` reports only
+whether a password is configured; it does not return the password. Settings use
+the existing protected Companion preferences storage.
+
+The standard Wi-Fi reconnect backoff and modem power saving remain in place.
+The Wi-Fi low-power variant still turns its radio off between failed attempts.
+Enabling Wi-Fi on a BLE low-power node is an explicit additional transport: the
+five-minute BLE timeout controls Bluetooth only and does not turn Wi-Fi off.
+
+Sensor nodes support authenticated, scoped telemetry subscriptions with a
+caller-supplied lifetime and nonnegative scalar LPP change thresholds. Invalid,
+truncated or composite thresholds are rejected before client state is changed.
+Expired subscriptions stop producing updates. Subscription state is transient:
+clients must subscribe again after a reboot. The low-power Sensor retains its
+twelve-second wake window and fifteen-minute deep sleep; it is not a continuous
+subscription server and is not kept awake by a subscription.
+
+The Companion forwards unhandled binary responses, including pushed telemetry,
+to the connected application. The UI now receives mesh events through a listener
+while retaining the local OLED page, release-to-disable action, persistent wake
+suppression, calibrated battery percentage and long-PRG restoration behavior.
+
+`get gps diag` adds observation-only GPS diagnostics. The Heltec GPS startup
+suppression, UART shutdown and independent VEXT claims remain unchanged.
+
+### Physical qualification
 
 CI validates native policy tests, compilation of every environment, generation
 of application/OTA images and generation of complete merged images. It cannot

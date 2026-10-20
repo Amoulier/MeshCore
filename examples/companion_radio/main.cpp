@@ -30,7 +30,13 @@ MultiSerialInterface interface_manager;
 #endif
 
 // include wifi interface
-#ifdef WIFI_SSID
+#ifdef ENABLE_WIFI_INTERFACE
+  #ifndef WIFI_SSID
+    #define WIFI_SSID ""
+  #endif
+  #ifndef WIFI_PWD
+    #define WIFI_PWD ""
+  #endif
   #ifndef TCP_PORT
     #define TCP_PORT 5000
   #endif
@@ -92,11 +98,7 @@ MultiSerialInterface interface_manager;
 
 StdRNG fast_rng;
 SimpleMeshTables tables;
-MyMesh the_mesh(radio_driver, fast_rng, rtc_clock, tables, store
-   #ifdef DISPLAY_CLASS
-      , &ui_task
-   #endif
-);
+MyMesh the_mesh(radio_driver, fast_rng, rtc_clock, tables, store);
 
 /* END GLOBAL OBJECTS */
 
@@ -105,8 +107,11 @@ void halt() {
 }
 
 /* WIFI RECONNECT TRACKERS */
-#if defined(ESP32) && defined(WIFI_SSID)
+#if defined(ESP32) && defined(ENABLE_WIFI_INTERFACE)
   #include <esp_wifi.h>
+  bool wifi_enabled = false;
+  char wifi_ssid[33] = {};
+  char wifi_pwd[64] = {};
   bool wifi_needs_reconnect = false;
   bool wifi_radio_suspended = false;
   unsigned long last_wifi_reconnect_attempt = 0;
@@ -153,35 +158,32 @@ void setup() {
   #endif
   #endif
   store.begin();
-  the_mesh.begin(
-    #ifdef DISPLAY_CLASS
-        disp != NULL
-    #else
-        false
-    #endif
-  );
+  the_mesh.begin();
 #elif defined(RP2040_PLATFORM)
   LittleFS.begin();
   store.begin();
-  the_mesh.begin(
-    #ifdef DISPLAY_CLASS
-        disp != NULL
-    #else
-        false
-    #endif
-  );
+  the_mesh.begin();
 #elif defined(ESP32)
   SPIFFS.begin(true);
   store.begin();
-  the_mesh.begin(
-    #ifdef DISPLAY_CLASS
-        disp != NULL
-    #else
-        false
-    #endif
-  );
+  the_mesh.begin();
 #else
   #error "need to define filesystem"
+#endif
+
+#ifdef BLE_PIN_CODE
+  if (the_mesh.getNodePrefs()->ble_pin != 0) {
+    the_mesh.setBLEPin(the_mesh.getNodePrefs()->ble_pin);
+  } else {
+#ifdef DISPLAY_CLASS
+    if (disp != NULL && BLE_PIN_CODE == 123456) {
+      the_mesh.setBLEPin(fast_rng.nextInt(100000, 1000000));
+    } else
+#endif
+    {
+      the_mesh.setBLEPin(BLE_PIN_CODE);
+    }
+  }
 #endif
 
 // add bluetooth interface
@@ -191,8 +193,14 @@ void setup() {
 #endif
 
 // add wifi interface
-#ifdef WIFI_SSID
+#ifdef ENABLE_WIFI_INTERFACE
+  auto* wifi_prefs = the_mesh.getNodePrefs();
+  StrHelper::strncpy(wifi_ssid, wifi_prefs->getWifiSSID(), sizeof(wifi_ssid));
+  StrHelper::strncpy(wifi_pwd, wifi_prefs->getWifiPassword(), sizeof(wifi_pwd));
+  wifi_enabled = wifi_prefs->shouldStartWifi();
+  if (wifi_enabled) {
   board.setInhibitSleep(true);   // prevent generic sleep while Wi-Fi owns the radio
+  WiFi.mode(WIFI_STA);
 #if defined(HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF) && HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF
   WiFi.setAutoReconnect(false);
 #else
@@ -220,9 +228,10 @@ void setup() {
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   #endif
 #endif
-  WiFi.begin(WIFI_SSID, WIFI_PWD);
+  WiFi.begin(wifi_ssid, wifi_pwd);
   wifi_interface.begin(TCP_PORT);
   interface_manager.addInterface(InterfaceType::WiFi, &wifi_interface);
+  }
 #endif
 
 // add usb interface
@@ -254,6 +263,7 @@ void setup() {
 
 #ifdef DISPLAY_CLASS
   ui_task.begin(disp, &sensors, the_mesh.getNodePrefs());
+  the_mesh.setListener(&ui_task);
 #endif
 
   board.onBootComplete();
@@ -278,7 +288,8 @@ void loop() {
 #endif
   }
 
-#if defined(ESP32) && defined(WIFI_SSID)
+#if defined(ESP32) && defined(ENABLE_WIFI_INTERFACE)
+  if (wifi_enabled) {
 #if defined(HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF) && HELTEC_V4_WIFI_AGGRESSIVE_BACKOFF
   // The explicit low-power Wi-Fi target turns the radio fully off between
   // attempts. It is intentionally unavailable while suspended.
@@ -297,7 +308,7 @@ void loop() {
       wifi_needs_reconnect = false; // a new disconnect event schedules the next attempt
       wifi_radio_suspended = false;
       last_wifi_reconnect_attempt = now;
-      WiFi.begin(WIFI_SSID, WIFI_PWD);
+      WiFi.begin(wifi_ssid, wifi_pwd);
       wifi_interface.begin(TCP_PORT);
       wifi_reconnect_delay_ms = min(wifi_reconnect_delay_ms * 2UL, 900000UL);
     }
@@ -312,6 +323,7 @@ void loop() {
     wifi_reconnect_delay_ms = min(wifi_reconnect_delay_ms * 2UL, 300000UL);
   }
 #endif
+  }
 #endif
 
   board.idle();
