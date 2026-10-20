@@ -97,7 +97,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Publish all-variant energy prerelease
+    name: Publish all-variant stable release
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -147,7 +147,7 @@ jobs:
           permanent PIN has been configured. The OLED can be disabled locally
           from the node and restored with the PRG button.
 
-          This is prerelease firmware pending complete physical qualification.
+          Stable fork release. Physical qualification coverage is described in the release notes.
           EOF
 
           archive="MeshCore-Heltec-V4-all-variants-${RELEASE_TAG}.zip"
@@ -157,18 +157,18 @@ jobs:
             sha256sum ./*-merged.bin ./*-ota.bin "${archive}" > SHA256SUMS.txt
           )
 
-      - name: Publish prerelease
+      - name: Publish stable release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release_meta.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
           name: "MeshCore Heltec V4 Energy Optimization ${{ steps.release_meta.outputs.release_tag }}"
-          prerelease: true
+          prerelease: false
           draft: false
-          make_latest: false
+          make_latest: true
           fail_on_unmatched_files: true
           body: |
-            Heltec WiFi LoRa 32 V4 OLED-only energy-optimization prerelease.
+            Heltec WiFi LoRa 32 V4 OLED-only stable fork release.
 
             Each role has two installable files:
             - `*-merged.bin`: complete image for a fresh flash or recovery at `0x0`;
@@ -177,20 +177,20 @@ jobs:
             ## Firmware variants
 
             ### Companion
-            - `heltec_v4_companion_radio_ble` — Phone Companion over BLE; remains discoverable continuously.
-            - `heltec_v4_companion_radio_usb` — Companion for a computer or host connected through USB serial.
-            - `heltec_v4_companion_radio_wifi` — Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
+            - `heltec_v4_companion_radio_ble` â€” Phone Companion over BLE; remains discoverable continuously.
+            - `heltec_v4_companion_radio_usb` â€” Companion for a computer or host connected through USB serial.
+            - `heltec_v4_companion_radio_wifi` â€” Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
 
             ### Repeaters and infrastructure
-            - `heltec_v4_solar_repeater` — Solar LoRa repeater with critical-battery recovery, default power saving and OLED off at startup.
-            - `heltec_v4_expansionkit_repeater` — Repeater with Heltec expansion-kit sensor and accessory-bus support.
-            - `heltec_v4_repeater_bridge_espnow` — Continuously available bridge between MeshCore LoRa and ESP-NOW.
+            - `heltec_v4_solar_repeater` â€” Solar LoRa repeater with critical-battery recovery, default power saving and OLED off at startup.
+            - `heltec_v4_expansionkit_repeater` â€” Repeater with Heltec expansion-kit sensor and accessory-bus support.
+            - `heltec_v4_repeater_bridge_espnow` â€” Continuously available bridge between MeshCore LoRa and ESP-NOW.
 
             ### Services and endpoints
-            - `heltec_v4_room_server` — Shared room/BBS service that stores and distributes posts to mesh clients.
-            - `heltec_v4_terminal_chat` — Interactive MeshCore chat client operated from a USB serial terminal.
-            - `heltec_v4_sensor` — Always-on telemetry and alert node with continuous LoRa availability.
-            - `heltec_v4_kiss_modem` — USB KISS modem for external host software and custom radio integrations.
+            - `heltec_v4_room_server` â€” Shared room/BBS service that stores and distributes posts to mesh clients.
+            - `heltec_v4_terminal_chat` â€” Interactive MeshCore chat client operated from a USB serial terminal.
+            - `heltec_v4_sensor` â€” Always-on telemetry and alert node with continuous LoRa availability.
+            - `heltec_v4_kiss_modem` â€” USB KISS modem for external host software and custom radio integrations.
 
             The single ZIP contains all 20 firmware images. Installation guidance
             and all integrity hashes are centralized in `INSTALLATION.txt` and
@@ -201,9 +201,16 @@ jobs:
             saving, optional ESP-NOW receive windows, adaptive noise calibration,
             role-specific peripheral builds, and the existing FEM-aware estimated 22 dBm ceiling.
 
-            This remains a prerelease pending physical current, RF, sensitivity,
-            BLE/Wi-Fi/ESP-NOW, and battery-runtime validation on V4.2/GC1109
-            and V4.3/KCT8103L hardware.
+            Validation: all 82 native tests and all ten firmware builds passed before
+            integration. The release rebuild validates both image formats for every role.
+            Includes upstream stability fixes, optional Wi-Fi for BLE Companion,
+            authenticated scoped telemetry subscriptions and GPS diagnostics.
+
+            Physical qualification remains incomplete: current, RF, sensitivity,
+            authenticated messaging, Wi-Fi/ESP-NOW operation, solar battery recovery
+            and battery runtime still need validation on V4.2/GC1109 and
+            V4.3/KCT8103L hardware. Stable is the publication channel; it does not
+            indicate that these measurements have been completed.
           files: |
             out/*-merged.bin
             out/*-ota.bin
