@@ -28,6 +28,12 @@ TEST(TelemetryEncoding, SignedFourByteValueRoundTrips) {
   EXPECT_FLOAT_EQ(-100, LPPData::getFloat(data, 4, 1, true));
 }
 
+TEST(TelemetryEncoding, LargestPushLeavesRoomForEncryptionPadding) {
+  EXPECT_LE(8 + telemetry_subscription::MAX_DATA_SIZE + CIPHER_MAC_SIZE +
+            CIPHER_BLOCK_SIZE - 1, MAX_PACKET_PAYLOAD);
+  EXPECT_LT(8 + telemetry_subscription::MAX_DATA_SIZE, MAX_PACKET_PAYLOAD);
+}
+
 TEST(TelemetryEncoding, TruncatedReadDoesNotChangeOutput) {
   const uint8_t truncated[] = {1,LPP_TEMPERATURE,0};
   LPPReader reader(truncated, sizeof(truncated));

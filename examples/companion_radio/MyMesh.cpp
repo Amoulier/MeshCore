@@ -688,6 +688,7 @@ uint8_t MyMesh::onContactRequest(const ContactInfo &contact, uint32_t sender_tim
 }
 
 void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, uint8_t len) {
+  if (len < 4 || size_t(len) + 2 > sizeof(out_frame)) return;
   uint32_t tag;
   memcpy(&tag, data, 4);
 
@@ -696,12 +697,12 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     pending_login = 0;
 
     int i = 0;
-    if (memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
+    if (len >= 6 && memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
       out_frame[i++] = PUSH_CODE_LOGIN_SUCCESS;
       out_frame[i++] = 0; // legacy: is_admin = false
       memcpy(&out_frame[i], contact.id.pub_key, 6);
       i += 6;                                     // pub_key_prefix
-    } else if (data[4] == RESP_SERVER_LOGIN_OK) { // new login response
+    } else if (len >= 13 && data[4] == RESP_SERVER_LOGIN_OK) { // new login response
       uint16_t keep_alive_secs = ((uint16_t)data[5]) * 16;
       if (keep_alive_secs > 0) {
         startConnection(contact, keep_alive_secs);

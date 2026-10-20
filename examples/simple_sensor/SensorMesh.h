@@ -34,11 +34,11 @@
 #define PERM_RECV_ALERTS_HI    (1 << 7)   // high priority alerts
 
 #ifndef FIRMWARE_BUILD_DATE
-  #define FIRMWARE_BUILD_DATE   "15 Oct 2026"
+  #define FIRMWARE_BUILD_DATE   "19 Oct 2026"
 #endif
 
 #ifndef FIRMWARE_VERSION
-  #define FIRMWARE_VERSION   "v1.18.0"
+  #define FIRMWARE_VERSION   "heltec-v4-upstream-2026-10"
 #endif
 
 #define FIRMWARE_ROLE "sensor"

@@ -1,9 +1,14 @@
 #pragma once
 
 #include <stddef.h>
+#include <MeshCore.h>
 #include "LPPDataHelpers.h"
 
 namespace telemetry_subscription {
+// Match Mesh::createDatagram's conservative padding bound and reserve the
+// pushed response's tag and timestamp before admitting any sensor records.
+constexpr size_t MAX_DATA_SIZE = MAX_PACKET_PAYLOAD - CIPHER_MAC_SIZE -
+    (CIPHER_BLOCK_SIZE - 1) - 8;
 // Thresholds describe scalar channels; composite GPS/vector records cannot be
 // compared as one float. Validate the complete list before updating a client.
 inline bool validThresholds(const uint8_t* data, size_t length) {

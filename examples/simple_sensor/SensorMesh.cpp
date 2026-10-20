@@ -400,6 +400,7 @@ uint8_t SensorMesh::handleLoginReq(const mesh::Identity& sender, const uint8_t* 
     }
 
     client = acl.putClient(sender, PERM_RECV_ALERTS_HI | PERM_RECV_ALERTS_LO);  // add to contacts (if not already known)
+    if (client == NULL) return 0;
     if (sender_timestamp <= client->last_timestamp) {
       MESH_DEBUG_PRINTLN("Possible login replay attack!");
       return 0;  // FATAL: client table is full -OR- replay attack
@@ -553,6 +554,7 @@ mesh::DispatcherAction SensorMesh::onRecvPacket(mesh::Packet* pkt) {
 }
 
 void SensorMesh::onAnonDataRecv(mesh::Packet* packet, const uint8_t* secret, const mesh::Identity& sender, uint8_t* data, size_t len) {
+  if (len < 5) return;
   if (packet->getPayloadType() == PAYLOAD_TYPE_ANON_REQ) {  // received an initial request by a possible admin client (unknown at this stage)
     uint32_t timestamp;
     memcpy(&timestamp, data, 4);
@@ -802,7 +804,7 @@ SensorMesh::SensorMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh::Millise
      : mesh::Mesh(radio, ms, rng, rtc, *new StaticPoolPacketManager(32), tables),
       region_map(key_store), temp_map(key_store),
       _cli(board, rtc, sensors, region_map, acl, &_prefs, this),
-      telemetry(MAX_PACKET_PAYLOAD - 4)
+      telemetry(telemetry_subscription::MAX_DATA_SIZE)
 {
   next_local_advert = next_flood_advert = 0;
   dirty_contacts_expiry = 0;
