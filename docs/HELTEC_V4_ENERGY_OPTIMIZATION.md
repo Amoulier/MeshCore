@@ -21,11 +21,14 @@ output.
 The 22 dBm value is a firmware estimate based on the detected front end. It is
 not a substitute for measuring conducted RF power on V4.2 and V4.3 hardware.
 
+## Supported targets
+
+The distribution builds the same ten Heltec V4 OLED targets as official MeshCore.
+
 ## Common changes
 
-- Battery readings used by UI and telemetry are cached for ten seconds. Solar
-  cut-off decisions, boot recovery and OTA qualification always request a fresh
-  ADC measurement.
+- Battery readings used by UI and telemetry are cached for ten seconds.
+  Safety checks and OTA qualification request a fresh ADC measurement.
 - Every application yields to the ESP32 FreeRTOS idle task. The duplicate board
   loop inside the RadioLib wrapper was removed.
 - The CPU remains fixed at the established 80 MHz with the currently pinned
@@ -44,8 +47,7 @@ not a substitute for measuring conducted RF power on V4.2 and V4.3 hardware.
 - Repeater, Room Server and Sensor initialize the board and low-voltage guard
   before starting the debug serial port.
 - New-install local advertisements are less frequent: sixteen minutes for the
-  standard Repeater, Room Server and Sensor, and thirty minutes for Solar
-  Repeater.
+  standard Repeater, Room Server and Sensor.
 
 ## Framework limitation recorded by the audit
 
@@ -55,11 +57,9 @@ sleep, Bluetooth controller modem sleep and disconnected-station ESP-NOW power
 management are not enabled. Application build flags cannot retroactively enable
 those precompiled components.
 
-For that reason, this release does **not** claim DFS or automatic light sleep.
-The corresponding low-power variants use explicit policies that work with the
-current toolchain instead of depending on unavailable framework options. Solar
-Repeater continues to use the existing explicit LoRa-DIO/timer light-sleep
-path, and the low-power Sensor uses deep sleep.
+The retained ten targets use cooperative idle and explicit peripheral and
+transport power saving. DFS and automatic light sleep remain unavailable with
+the pinned framework.
 
 ## Connectivity policies
 
@@ -71,14 +71,6 @@ path, and the low-power Sensor uses deep sleep.
 - Requests longer intervals and slave latency after ten seconds without data.
 - Remains enabled and discoverable indefinitely.
 
-### Low-power BLE Companion
-
-`heltec_v4_companion_radio_ble_low_power` includes all standard BLE behavior,
-then disables Bluetooth completely after five minutes without a connection.
-LoRa and the node continue operating. Restore Bluetooth locally from the
-Bluetooth page on the Heltec display with a long PRG press. This target is not
-appropriate when unattended remote BLE discovery must remain continuous.
-
 ### Standard Wi-Fi Companion
 
 - Enables Wi-Fi modem power saving while associated.
@@ -86,28 +78,9 @@ appropriate when unattended remote BLE discovery must remain continuous.
   indefinitely.
 - Keeps the Wi-Fi transport available whenever the network is reachable.
 
-### Low-power Wi-Fi Companion
-
-`heltec_v4_companion_radio_wifi_low_power` uses maximum modem power saving and
-powers Wi-Fi completely off between failed reconnect attempts. Backoff grows
-from ten seconds to a maximum of fifteen minutes and resets after a successful
-connection. The Companion cannot accept TCP connections while its Wi-Fi radio
-is suspended.
-
 ### Standard ESP-NOW bridge
 
 The standard bridge remains continuously available.
-
-### Low-power ESP-NOW bridge
-
-`heltec_v4_repeater_bridge_espnow_low_power` explicitly powers ESP-NOW/Wi-Fi on
-for five seconds and off for twenty-five seconds. Valid incoming or successful
-outgoing traffic extends the active window. Outgoing MeshCore bridge traffic
-wakes ESP-NOW immediately.
-
-Inbound ESP-NOW packets sent during the twenty-five-second off window are lost.
-This profile is therefore experimental and intended only for coordinated or
-repeating senders that tolerate the documented receive windows.
 
 ## RX profiles
 
@@ -128,25 +101,11 @@ set radio.rxprofile battery
 GC1109 does not expose the same independently controllable external LNA path,
 so the profile command reports that its external receive path is fixed.
 
-## Specialized targets
-
-- `heltec_v4_sensor_low_power` powers its sensor rail, samples and services
-  queued work during a twelve-second wake window, then deep sleeps for fifteen
-  minutes. It is not continuously reachable. Its USB CDC and PSRAM startup
-  features are disabled.
-- `heltec_v4_solar_repeater` enables the existing LoRa wake-capable power-saving
-  path by default after a thirty-second startup window. Its 3.50 V shutdown and
-  3.65 V recovery thresholds are unchanged.
-- `heltec_v4_solar_repeater_headless` additionally removes application USB CDC
-  and PSRAM initialization for unattended deployment.
-- Standard variants remain available beside every connectivity variant that
-  intentionally trades availability for energy.
-
 ## Selective upstream connectivity and telemetry integration
 
-The BLE Companion variants also provide an optional Wi-Fi/TCP interface. On a
+The BLE Companion also provides an optional Wi-Fi/TCP interface. On a
 fresh BLE installation no SSID is configured, so the Wi-Fi radio and TCP server
-are not started. The Wi-Fi-only variants retain their compile-time fallback
+are not started. The Wi-Fi Companion retains their compile-time fallback
 credentials. Stored credentials take precedence over those build defaults.
 
 ```text
@@ -163,18 +122,14 @@ stored credentials and restores the build defaults. `get wifi.pwd` reports only
 whether a password is configured; it does not return the password. Settings use
 the existing protected Companion preferences storage.
 
-The standard Wi-Fi reconnect backoff and modem power saving remain in place.
-The Wi-Fi low-power variant still turns its radio off between failed attempts.
-Enabling Wi-Fi on a BLE low-power node is an explicit additional transport: the
-five-minute BLE timeout controls Bluetooth only and does not turn Wi-Fi off.
+Wi-Fi reconnect backoff and modem power saving remain in place. BLE and
+ESP-NOW remain continuously available in their corresponding retained targets.
 
 Sensor nodes support authenticated, scoped telemetry subscriptions with a
 caller-supplied lifetime and nonnegative scalar LPP change thresholds. Invalid,
 truncated or composite thresholds are rejected before client state is changed.
 Expired subscriptions stop producing updates. Subscription state is transient:
-clients must subscribe again after a reboot. The low-power Sensor retains its
-twelve-second wake window and fifteen-minute deep sleep; it is not a continuous
-subscription server and is not kept awake by a subscription.
+clients must subscribe again after a reboot.
 
 The Companion forwards unhandled binary responses, including pushed telemetry,
 to the connected application. The UI now receives mesh events through a listener
@@ -198,6 +153,4 @@ Hardware qualification still requires:
 - BLE pairing, bonding and reconnection tests on Android and iOS.
 - Wi-Fi reconnect tests with the access point available and unavailable.
 - ESP-NOW delivery tests across active and inactive windows.
-- Sensor wake, sample, transmit and deep-sleep tests.
-- A complete Solar Repeater 3.50 V / 3.65 V recovery cycle with the final cell,
-  charger and panel.
+- Sensor sample, transmit and subscription-expiry tests.

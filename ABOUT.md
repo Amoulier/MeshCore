@@ -2,7 +2,7 @@
 
 **MeshCore for Heltec V4** is an independent, unofficial, hardware-focused MeshCore firmware distribution maintained exclusively for the **Heltec WiFi LoRa 32 V4 OLED** family.
 
-This fork keeps the MeshCore protocol and the shared application code required by Heltec V4 firmware while concentrating development on reliable Companion, Repeater and unattended solar-node operation. It is developed primarily on the **Heltec V4.3 OLED**, while retaining support for compatible V4.2 hardware.
+This fork keeps the MeshCore protocol and the shared application code required by Heltec V4 firmware while concentrating development on reliable Companion, Repeater and Sensor operation. It is developed primarily on the **Heltec V4.3 OLED**, while retaining support for compatible V4.2 hardware.
 
 > This repository is derived from `meshcore-dev/MeshCore`, but it is maintained independently and must not be represented as an official MeshCore release.
 
@@ -30,10 +30,12 @@ The project focuses on four practical goals:
 
 ## Firmware roles
 
+The maintained distribution contains the same ten targets as official MeshCore for Heltec V4 OLED.
+
 The repository builds Heltec V4 firmware for:
 
 - Bluetooth, USB and Wi-Fi Companion nodes.
-- Standard Repeater and Solar Repeater nodes.
+- Standard Repeater nodes.
 - Expansion-kit and ESP-NOW bridge Repeaters.
 - Room Server, Terminal Chat, Sensor and USB KISS modem roles.
 
@@ -49,7 +51,6 @@ The maintained firmware adds or strengthens:
 - TX and status LED suppression for lower unattended power use.
 - Automatic GC1109/KCT8103L detection, KCT8103L receive-gain control and FEM-aware transmit-power limits.
 - Safer identity and configuration persistence using temporary files, verified recovery copies and write blocking during critical battery recovery.
-- A dedicated Solar Repeater policy with low-voltage confirmation, timed recovery wakes and voltage hysteresis.
 - Reproducible CI builds, host tests and Heltec V4-only scope checks.
 
 The firmware preserves MeshCore's existing `tx` meaning: the configured value is requested **SX1262 input power**, not guaranteed antenna output. The board may reduce the applied value according to the detected RF front end.
@@ -67,25 +68,13 @@ Bluetooth and LoRa remain active while the OLED is disabled. Incoming messages d
 
 With the default OLED Companion configuration, the active six-digit Bluetooth PIN is generated at boot and displayed on the screen. The displayed PIN—not a presumed static code—must be used for first pairing.
 
-## Solar Repeater behavior
-
-The `heltec_v4_solar_repeater` target adds an unattended battery-protection profile:
-
-- Three consecutive readings at or below **3.50 V** trigger protective recovery sleep.
-- Identity and configuration writes are blocked before shutdown.
-- OLED, GPS, SX1262 and the external RF front end are placed in low-power states.
-- Recovery wakes use a timer at approximately 60-second intervals.
-- Normal boot resumes only after the battery reaches **3.65 V**.
-
-This policy is intentionally limited to the Solar Repeater. Companion targets retain continuous connectivity behavior instead of entering the solar recovery latch.
-
 ## Validation and releases
 
 Every retained target is compiled by CI, and the repository runs native policy tests plus an automated audit that prevents unrelated board support from being reintroduced.
 
-Initial physical validation on a Heltec V4.3 Companion has confirmed successful boot, Bluetooth pairing with the PIN shown on the OLED, on-device persistent display shutdown and restoration, and normal startup after removal from USB power. This does not yet constitute a full battery-runtime, RF-output or solar-deployment validation.
+Initial physical validation on a Heltec V4.3 Companion has confirmed successful boot, Bluetooth pairing with the PIN shown on the OLED, on-device persistent display shutdown and restoration, and normal startup after removal from USB power. This does not yet constitute a full battery-runtime or RF-output validation.
 
-Validation releases remain prereleases until physical testing covers prolonged Bluetooth reconnection, current consumption, RF output, configuration persistence, full discharge behavior and solar recovery on the final hardware installation.
+Validation releases remain prereleases until physical testing covers prolonged Bluetooth reconnection, current consumption, RF output, configuration persistence, full discharge behavior on the final hardware installation.
 
 Complete ESP32-S3 images are published with the exact suffix **`-merged.bin`**. That suffix must be preserved when using the MeshCore Custom Firmware flasher so the complete image is written at address `0x0`. Application-only update images use the suffix **`-ota.bin`**.
 
@@ -97,17 +86,17 @@ Original MeshCore authors and contributors retain attribution for upstream work.
 
 ## Recommended GitHub About description
 
-> Heltec V4-only MeshCore firmware for reliable Companion and Repeater operation, persistent OLED/GPS power control, calibrated battery reporting, protected storage and solar recovery.
+> Heltec V4-only MeshCore firmware for reliable Companion and Repeater operation, persistent OLED/GPS power control, calibrated battery reporting, protected storage and optimized power use.
 
 ## Suggested repository topics
 
-`meshcore`, `heltec`, `heltec-v4`, `esp32-s3`, `lora`, `mesh-network`, `companion`, `repeater`, `solar-node`, `firmware`, `platformio`, `oled`, `gps`, `battery-management`
+`meshcore`, `heltec`, `heltec-v4`, `esp32-s3`, `lora`, `mesh-network`, `companion`, `repeater`, `firmware`, `platformio`, `oled`, `gps`, `battery-management`
 
 
 ## Energy optimization generation
 
-The current generation adds role-specific peripheral builds, cached battery
-telemetry with fresh safety readings, cooperative ESP32 idle, optional DFS and
-automatic light sleep, BLE/Wi-Fi/ESP-NOW power policies, runtime RX profiles and
-a deep-sleep Sensor target. New installations request 11 dBm SX1262 input while
-the detected-FEM policy retains the 22 dBm estimated antenna-output ceiling.
+The ten retained targets match the official Heltec V4 OLED environment list.
+They retain role-specific peripheral builds, cached battery telemetry,
+cooperative ESP32 idle, BLE/Wi-Fi power saving and runtime RX profiles.
+New installations request 11 dBm SX1262 input while the detected-FEM policy
+retains the 22 dBm estimated antenna-output ceiling.
