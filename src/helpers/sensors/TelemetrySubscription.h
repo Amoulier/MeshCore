@@ -37,8 +37,13 @@ inline bool validThresholds(const uint8_t* data, size_t length) {
 }
 
 inline bool validRequest(const uint8_t* payload, size_t length, size_t capacity) {
-  return payload && length >= 8 && payload[6] == 0 &&
-      payload[7] <= capacity && length - 8 == payload[7] &&
-      validThresholds(payload + 8, payload[7]);
+  if (!payload || length < 8 || payload[6] != 0 || payload[7] > capacity ||
+      payload[7] > length - 8) return false;
+  const size_t end = 8 + payload[7];
+  // Mesh delivers zero-padded AES blocks. Admit only the bounded cipher
+  // padding, never extra nonzero records beyond the declared threshold list.
+  if (length - end >= CIPHER_BLOCK_SIZE) return false;
+  for (size_t i = end; i < length; ++i) if (payload[i] != 0) return false;
+  return validThresholds(payload + 8, payload[7]);
 }
 }

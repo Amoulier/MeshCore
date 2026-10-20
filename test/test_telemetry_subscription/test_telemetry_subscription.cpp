@@ -22,6 +22,16 @@ TEST(TelemetrySubscription, HumidityDoesNotConsumeFollowingChannel) {
   EXPECT_FLOAT_EQ(2, LPPData::getFloat(thresholds+2, 1, LPPData::getMultiplier(LPP_RELATIVE_HUMIDITY), false));
 }
 
+TEST(TelemetrySubscription, AcceptsMeshEncryptionPaddingButRejectsExtraData) {
+  // Five outer request bytes + twelve subscription bytes pad to 32 bytes.
+  uint8_t payload[27] = {1,0,0,0,60,0,0,4, 1,LPP_TEMPERATURE,0,10};
+  EXPECT_TRUE(telemetry_subscription::validRequest(payload, sizeof(payload), 14));
+  payload[26] = 1;
+  EXPECT_FALSE(telemetry_subscription::validRequest(payload, sizeof(payload), 14));
+  uint8_t excessive[28] = {1,0,0,0,60,0,0,4, 1,LPP_TEMPERATURE,0,10};
+  EXPECT_FALSE(telemetry_subscription::validRequest(excessive, sizeof(excessive), 14));
+}
+
 TEST(TelemetryEncoding, SignedFourByteValueRoundTrips) {
   uint8_t data[4];
   EXPECT_EQ(4, LPPData::putFloat(data, -100, 4, 1, true));
