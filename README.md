@@ -28,23 +28,19 @@ The shared MeshCore protocol implementation, ESP32 support, cryptography, tests,
 
 ## Available firmware targets
 
+The distribution contains ten Heltec V4 OLED targets, replacing the official standard Repeater with this fork's Solar Repeater.
+
 | PlatformIO environment | Purpose |
 | --- | --- |
 | `heltec_v4_companion_radio_ble` | BLE Companion that remains continuously discoverable |
-| `heltec_v4_companion_radio_ble_low_power` | BLE Companion that turns Bluetooth off after five disconnected minutes |
 | `heltec_v4_companion_radio_usb` | USB Companion node |
 | `heltec_v4_companion_radio_wifi` | Wi-Fi Companion with modem power saving |
-| `heltec_v4_companion_radio_wifi_low_power` | Wi-Fi Companion that powers the radio off between reconnect attempts |
-| `heltec_v4_repeater` | Standard OLED repeater |
-| `heltec_v4_solar_repeater` | Unattended solar repeater with protective battery recovery |
-| `heltec_v4_solar_repeater_headless` | Solar repeater without application USB CDC or PSRAM initialization |
+| `heltec_v4_solar_repeater` | Solar repeater with battery recovery and power saving |
 | `heltec_v4_expansionkit_repeater` | Repeater with expansion-kit sensor bus |
 | `heltec_v4_repeater_bridge_espnow` | Continuously available ESP-NOW bridge repeater |
-| `heltec_v4_repeater_bridge_espnow_low_power` | ESP-NOW bridge with a five-second-on/twenty-five-second-off radio cycle |
 | `heltec_v4_room_server` | Room server |
 | `heltec_v4_terminal_chat` | Terminal chat firmware |
 | `heltec_v4_sensor` | Always-on sensor node |
-| `heltec_v4_sensor_low_power` | Twelve-second wake / fifteen-minute deep-sleep sensor profile |
 | `heltec_v4_kiss_modem` | USB KISS modem |
 
 ## Heltec V4 power and radio behavior
@@ -62,7 +58,7 @@ The retained targets share these hardware-focused changes where applicable:
 - Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware ceiling that keeps estimated output at or below 22 dBm.
 - Temporary-file, backup, and rename-based persistence for identity and configuration stores, with a write guard during critical battery recovery.
 - Fast noise-floor calibration during the first minute followed by a lower-overhead thirty-second maintenance cadence.
-- Less frequent new-install advertisements: sixteen minutes for standard Repeater, Room Server and Sensor; thirty minutes for Solar Repeater.
+- Less frequent new-install advertisements: thirty minutes for Solar Repeater and sixteen minutes for Room Server and Sensor.
 
 ### Transmit power
 
@@ -76,37 +72,13 @@ This is a firmware estimate, not an RF certification result. Measure conducted o
 
 The CPU remains at the established fixed 80 MHz. The pinned Arduino-ESP32 framework was built without ESP-IDF dynamic frequency scaling, automatic light sleep, Bluetooth controller modem sleep, or disconnected-station ESP-NOW power management. Application flags cannot enable those precompiled features after the fact.
 
-This release therefore uses policies that are effective with the current framework: cooperative idle, explicit Solar Repeater light sleep, Sensor deep sleep, BLE advertising/connection scheduling, Wi-Fi radio-off backoff, and an explicit ESP-NOW duty-cycle variant. It does not claim framework-level DFS or automatic light sleep.
+The retained targets use cooperative idle, BLE advertising/connection scheduling, Wi-Fi modem power saving and reconnect backoff. Framework-level DFS and automatic light sleep are not enabled.
 
 ### Standard profile
 
-Standard Companion, Repeater, Room Server, Sensor, Bridge, Terminal and KISS targets retain continuous availability appropriate to their role. They receive the common ADC, OLED, GPS, LED, radio, storage and idle improvements but do not force the 3.50 V solar recovery latch.
+Standard Companion, Repeater, Room Server, Sensor, Bridge, Terminal and KISS targets retain continuous availability appropriate to their role. They receive the common ADC, OLED, GPS, LED, radio, storage and idle improvements with continuous availability.
 
-### Low-power connectivity variants
-
-- The BLE low-power target disables Bluetooth after five minutes without a connection. LoRa continues running. Restore Bluetooth locally from the Bluetooth page with a long PRG press.
-- The Wi-Fi low-power target switches the Wi-Fi radio completely off between failed reconnect attempts. Backoff grows from ten seconds to fifteen minutes and resets after a successful connection.
-- The ESP-NOW low-power target listens for five seconds, powers Wi-Fi/ESP-NOW off for twenty-five seconds, and repeats. Outgoing bridge traffic wakes it immediately; incoming packets during an off window are lost.
-- The standard BLE, Wi-Fi and ESP-NOW targets remain available when continuous connectivity is required.
-
-### Solar Repeater profile
-
-`heltec_v4_solar_repeater` adds an unattended low-battery policy:
-
-- OLED defaults to persistently off on a fresh installation.
-- Power saving is enabled by default after a thirty-second startup window.
-- Three consecutive readings at or below 3.50 V trigger protective sleep.
-- Identity and configuration writes are blocked before shutdown.
-- OLED, VEXT, GPS, SX1262 and the external FEM are placed in their low-power states.
-- The node wakes only by timer every 60 seconds while recovering.
-- Normal boot resumes only after the battery reaches 3.65 V.
-- Every retained application calls the board-level periodic hook; CI rejects an application entry point that omits it.
-
-Use the standard Solar Repeater when a runtime USB console is needed. The optional headless target removes application USB CDC and PSRAM initialization for unattended deployment.
-
-### Sensor low-power profile
-
-`heltec_v4_sensor_low_power` enables the accessory rail, samples and services queued work during a twelve-second wake window, then deep sleeps for fifteen minutes. Its OLED defaults off, periodic advertisement timer is disabled, and USB CDC/PSRAM startup features are removed. It is intentionally not continuously reachable.
+BLE Companion builds also support optional Wi-Fi configured through the Companion CLI. Wi-Fi stays off without credentials; saved network changes apply after reboot. See the connectivity and telemetry integration section in `docs/HELTEC_V4_ENERGY_OPTIMIZATION.md`.
 
 ## Operational commands
 
@@ -127,7 +99,7 @@ set display off
 set display on
 ```
 
-`get power.status` reports raw millivolts, the filtered percentage and the active Standard/Solar profile. `get radio.power` reports requested SX1262 input, the value actually applied after the FEM limit, and estimated antenna output.
+`get power.status` reports raw millivolts, the filtered percentage and the active power profile. `get radio.power` reports requested SX1262 input, the value actually applied after the FEM limit, and estimated antenna output.
 
 RX profiles affect reception only:
 
@@ -166,7 +138,7 @@ To compile every supported Heltec V4 target:
 The build script also accepts one or more environment names:
 
 ```bash
-./build.sh heltec_v4_repeater heltec_v4_solar_repeater heltec_v4_companion_radio_ble
+./build.sh heltec_v4_solar_repeater heltec_v4_companion_radio_ble
 ```
 
 ## Firmware files
@@ -182,7 +154,7 @@ Keep the `-merged.bin` suffix intact because the supported flasher uses it to id
 
 Several upstream example targets contain development defaults such as `password`, `hello`, `myssid`, and `mypwd`. Replace these values before deploying a repeater, room server, sensor, or Wi-Fi companion. Do not commit production credentials.
 
-Confirm frequency, bandwidth, spreading factor, coding rate, requested transmit power, actual measured RF output, antenna system and regional requirements before transmitting. CI validates compilation and pure policy logic; it does not replace current-consumption, RF-power, reconnection, packet-delivery, solar-controller or full discharge/recovery tests on the final hardware installation.
+Confirm frequency, bandwidth, spreading factor, coding rate, requested transmit power, actual measured RF output, antenna system and regional requirements before transmitting. CI validates compilation and pure policy logic; it does not replace current-consumption, RF-power, reconnection, packet-delivery, full battery-discharge tests on the final hardware installation.
 
 ## Project direction
 

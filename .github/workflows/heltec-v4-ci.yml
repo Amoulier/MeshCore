@@ -39,21 +39,15 @@ jobs:
           bash -n build.sh
 
           expected_targets=(
-            heltec_v4_repeater
             heltec_v4_solar_repeater
-            heltec_v4_solar_repeater_headless
             heltec_v4_expansionkit_repeater
             heltec_v4_repeater_bridge_espnow
-            heltec_v4_repeater_bridge_espnow_low_power
             heltec_v4_room_server
             heltec_v4_terminal_chat
             heltec_v4_companion_radio_usb
             heltec_v4_companion_radio_ble
-            heltec_v4_companion_radio_ble_low_power
             heltec_v4_companion_radio_wifi
-            heltec_v4_companion_radio_wifi_low_power
             heltec_v4_sensor
-            heltec_v4_sensor_low_power
             heltec_v4_kiss_modem
           )
 
@@ -67,6 +61,8 @@ jobs:
           test "$(grep -Ec '^  heltec_v4_[a-z0-9_]+$' build.sh)" -eq "${#expected_targets[@]}"
           test "$(sed -n '/^        environment:/,/^    steps:/p' .github/workflows/heltec-v4-ci.yml | grep -Ec '^          - heltec_v4_[a-z0-9_]+$')" -eq "${#expected_targets[@]}"
           test "$(sed -n '/^        environment:/,/^    steps:/p' .github/workflows/heltec-v4-validation-release.yml | grep -Ec '^          - heltec_v4_[a-z0-9_]+$')" -eq "${#expected_targets[@]}"
+
+          test "$(grep -Ec '^\[env:heltec_v4_[a-z0-9_]+\]$' variants/heltec_v4/platformio.ini)" -eq "${#expected_targets[@]}"
 
           application_loops=(
             examples/companion_radio/main.cpp
@@ -102,21 +98,15 @@ jobs:
       fail-fast: false
       matrix:
         environment:
-          - heltec_v4_repeater
           - heltec_v4_solar_repeater
-          - heltec_v4_solar_repeater_headless
           - heltec_v4_expansionkit_repeater
           - heltec_v4_repeater_bridge_espnow
-          - heltec_v4_repeater_bridge_espnow_low_power
           - heltec_v4_room_server
           - heltec_v4_terminal_chat
           - heltec_v4_companion_radio_usb
           - heltec_v4_companion_radio_ble
-          - heltec_v4_companion_radio_ble_low_power
           - heltec_v4_companion_radio_wifi
-          - heltec_v4_companion_radio_wifi_low_power
           - heltec_v4_sensor
-          - heltec_v4_sensor_low_power
           - heltec_v4_kiss_modem
 
     steps:

@@ -57,6 +57,11 @@ public:
   size_t print(unsigned long long value, int = DEC) override { return emit(value); }
 
   const std::string& text() const { return _text; }
+  size_t print(double value, int precision = 2) override {
+    char text[48];
+    snprintf(text, sizeof(text), "%.*f", precision, value);
+    return write(reinterpret_cast<const uint8_t*>(text), strlen(text));
+  }
 };
 
 #if 0
@@ -133,6 +138,39 @@ TEST(CompanionNodePrefs, AgcCommandsClampBeforeNarrowing) {
   ASSERT_TRUE(radio->handleCommand("set agc.reset.interval -1", 0, reply));
   EXPECT_EQ(0, radio->getAgcResetInt());
 }
+
+#ifdef ENABLE_WIFI_INTERFACE
+TEST(CompanionNodePrefs, BleWifiRemainsOffWithoutCredentials) {
+  NodePrefs prefs;
+  EXPECT_FALSE(prefs.shouldStartWifi());
+  ReplayStream legacy("{name:\"existing\",radio:{tx:11},custom:{},gps:{en:0}}");
+  ASSERT_TRUE(prefs.loadSerial(legacy));
+  EXPECT_FALSE(prefs.shouldStartWifi());
+  EXPECT_STREQ("existing", prefs.node_name);
+  EXPECT_EQ(11, prefs.tx_power_dbm);
+}
+
+TEST(CompanionNodePrefs, WifiCredentialsAndDisabledStateSurviveReboot) {
+  NodePrefs original;
+  strcpy(original.wifi_ssid, "test-network");
+  strcpy(original.wifi_pwd, "test-password");
+  original.wifi_enabled = 0;
+  original.radio_fem_rxgain = 1;
+  original.rx_boosted_gain = 0;
+  CaptureStream saved;
+  ASSERT_TRUE(original.saveSerial(saved));
+  ReplayStream input(saved.text().c_str());
+  NodePrefs restored;
+  ASSERT_TRUE(restored.loadSerial(input));
+  EXPECT_STREQ("test-network", restored.getWifiSSID());
+  EXPECT_STREQ("test-password", restored.getWifiPassword());
+  EXPECT_FALSE(restored.shouldStartWifi());
+  EXPECT_EQ(1, restored.radio_fem_rxgain);
+  EXPECT_EQ(0, restored.rx_boosted_gain);
+  restored.wifi_enabled = 1;
+  EXPECT_TRUE(restored.shouldStartWifi());
+}
+#endif
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
