@@ -44,6 +44,19 @@ TEST(TelemetryEncoding, TruncatedReadDoesNotChangeOutput) {
   EXPECT_FLOAT_EQ(99, value);
 }
 
+TEST(TelemetryEncoding, NegativeCurrentMatchesTheSensorWireFormat) {
+  uint8_t data[4];
+  LPPWriter writer(data, sizeof(data));
+  ASSERT_TRUE(writer.writeData(1, LPP_CURRENT, -0.5f));
+  LPPReader reader(data, sizeof(data));
+  uint8_t channel, type;
+  ASSERT_TRUE(reader.readHeader(channel, type));
+  float value = 0;
+  ASSERT_TRUE(reader.readCurrent(value));
+  EXPECT_FLOAT_EQ(-0.5f, value);
+  EXPECT_FLOAT_EQ(-0.5f, LPPData::getFloat(data+2, 2, 1000, LPPData::isSigned(type)));
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

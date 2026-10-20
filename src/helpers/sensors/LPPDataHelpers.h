@@ -125,6 +125,7 @@ public:
 
   static bool isSigned(uint8_t type) {
     return type == LPP_ALTITUDE || type == LPP_TEMPERATURE || type == LPP_GYROMETER ||
+        type == LPP_CURRENT || type == LPP_VOLTAGE ||
         type == LPP_ANALOG_INPUT || type == LPP_ANALOG_OUTPUT || type == LPP_GPS || type == LPP_ACCELEROMETER;
   }
 
