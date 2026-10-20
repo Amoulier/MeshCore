@@ -177,20 +177,20 @@ jobs:
             ## Firmware variants
 
             ### Companion
-            - `heltec_v4_companion_radio_ble` â€” Phone Companion over BLE; remains discoverable continuously.
-            - `heltec_v4_companion_radio_usb` â€” Companion for a computer or host connected through USB serial.
-            - `heltec_v4_companion_radio_wifi` â€” Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
+            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; remains discoverable continuously.
+            - `heltec_v4_companion_radio_usb` - Companion for a computer or host connected through USB serial.
+            - `heltec_v4_companion_radio_wifi` - Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
 
             ### Repeaters and infrastructure
-            - `heltec_v4_solar_repeater` â€” Solar LoRa repeater with critical-battery recovery, default power saving and OLED off at startup.
-            - `heltec_v4_expansionkit_repeater` â€” Repeater with Heltec expansion-kit sensor and accessory-bus support.
-            - `heltec_v4_repeater_bridge_espnow` â€” Continuously available bridge between MeshCore LoRa and ESP-NOW.
+            - `heltec_v4_solar_repeater` - Solar LoRa repeater with critical-battery recovery, default power saving and OLED off at startup.
+            - `heltec_v4_expansionkit_repeater` - Repeater with Heltec expansion-kit sensor and accessory-bus support.
+            - `heltec_v4_repeater_bridge_espnow` - Continuously available bridge between MeshCore LoRa and ESP-NOW.
 
             ### Services and endpoints
-            - `heltec_v4_room_server` â€” Shared room/BBS service that stores and distributes posts to mesh clients.
-            - `heltec_v4_terminal_chat` â€” Interactive MeshCore chat client operated from a USB serial terminal.
-            - `heltec_v4_sensor` â€” Always-on telemetry and alert node with continuous LoRa availability.
-            - `heltec_v4_kiss_modem` â€” USB KISS modem for external host software and custom radio integrations.
+            - `heltec_v4_room_server` - Shared room/BBS service that stores and distributes posts to mesh clients.
+            - `heltec_v4_terminal_chat` - Interactive MeshCore chat client operated from a USB serial terminal.
+            - `heltec_v4_sensor` - Always-on telemetry and alert node with continuous LoRa availability.
+            - `heltec_v4_kiss_modem` - USB KISS modem for external host software and custom radio integrations.
 
             The single ZIP contains all 20 firmware images. Installation guidance
             and all integrity hashes are centralized in `INSTALLATION.txt` and
