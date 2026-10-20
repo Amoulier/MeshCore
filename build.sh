@@ -2,7 +2,7 @@
 set -euo pipefail
 
 readonly SUPPORTED_TARGETS=(
-  heltec_v4_repeater
+  heltec_v4_solar_repeater
   heltec_v4_expansionkit_repeater
   heltec_v4_repeater_bridge_espnow
   heltec_v4_room_server

@@ -28,14 +28,14 @@ The shared MeshCore protocol implementation, ESP32 support, cryptography, tests,
 
 ## Available firmware targets
 
-The ten firmware targets match the official MeshCore Heltec V4 OLED target set.
+The distribution contains ten Heltec V4 OLED targets, replacing the official standard Repeater with this fork's Solar Repeater.
 
 | PlatformIO environment | Purpose |
 | --- | --- |
 | `heltec_v4_companion_radio_ble` | BLE Companion that remains continuously discoverable |
 | `heltec_v4_companion_radio_usb` | USB Companion node |
 | `heltec_v4_companion_radio_wifi` | Wi-Fi Companion with modem power saving |
-| `heltec_v4_repeater` | Standard OLED repeater |
+| `heltec_v4_solar_repeater` | Solar repeater with battery recovery and power saving |
 | `heltec_v4_expansionkit_repeater` | Repeater with expansion-kit sensor bus |
 | `heltec_v4_repeater_bridge_espnow` | Continuously available ESP-NOW bridge repeater |
 | `heltec_v4_room_server` | Room server |
@@ -58,7 +58,7 @@ The retained targets share these hardware-focused changes where applicable:
 - Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware ceiling that keeps estimated output at or below 22 dBm.
 - Temporary-file, backup, and rename-based persistence for identity and configuration stores, with a write guard during critical battery recovery.
 - Fast noise-floor calibration during the first minute followed by a lower-overhead thirty-second maintenance cadence.
-- Less frequent new-install advertisements: sixteen minutes for standard Repeater, Room Server and Sensor.
+- Less frequent new-install advertisements: thirty minutes for Solar Repeater and sixteen minutes for Room Server and Sensor.
 
 ### Transmit power
 
@@ -138,7 +138,7 @@ To compile every supported Heltec V4 target:
 The build script also accepts one or more environment names:
 
 ```bash
-./build.sh heltec_v4_repeater heltec_v4_companion_radio_ble
+./build.sh heltec_v4_solar_repeater heltec_v4_companion_radio_ble
 ```
 
 ## Firmware files

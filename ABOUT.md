@@ -30,12 +30,12 @@ The project focuses on four practical goals:
 
 ## Firmware roles
 
-The maintained distribution contains the same ten targets as official MeshCore for Heltec V4 OLED.
+The maintained distribution contains ten Heltec V4 OLED targets; Solar Repeater replaces the official standard Repeater.
 
 The repository builds Heltec V4 firmware for:
 
 - Bluetooth, USB and Wi-Fi Companion nodes.
-- Standard Repeater nodes.
+- Solar Repeater nodes with critical-battery recovery.
 - Expansion-kit and ESP-NOW bridge Repeaters.
 - Room Server, Terminal Chat, Sensor and USB KISS modem roles.
 
@@ -66,7 +66,7 @@ The Heltec V4 Companion includes an on-device OLED control page so the screen ca
 
 Bluetooth and LoRa remain active while the OLED is disabled. Incoming messages do not wake a persistently disabled screen, and the setting survives a reboot.
 
-With the default OLED Companion configuration, the active six-digit Bluetooth PIN is generated at boot and displayed on the screen. The displayed PIN—not a presumed static code—must be used for first pairing.
+With the default OLED Companion configuration, the active six-digit Bluetooth PIN is generated at boot and displayed on the screen. The displayed PINâ€”not a presumed static codeâ€”must be used for first pairing.
 
 ## Validation and releases
 
@@ -95,7 +95,7 @@ Original MeshCore authors and contributors retain attribution for upstream work.
 
 ## Energy optimization generation
 
-The ten retained targets match the official Heltec V4 OLED environment list.
+Ten targets are retained, with Solar Repeater replacing the official standard Repeater.
 They retain role-specific peripheral builds, cached battery telemetry,
 cooperative ESP32 idle, BLE/Wi-Fi power saving and runtime RX profiles.
 New installations request 11 dBm SX1262 input while the detected-FEM policy

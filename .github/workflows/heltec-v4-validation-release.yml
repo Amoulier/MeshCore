@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         environment:
-          - heltec_v4_repeater
+          - heltec_v4_solar_repeater
           - heltec_v4_expansionkit_repeater
           - heltec_v4_repeater_bridge_espnow
           - heltec_v4_room_server
@@ -182,7 +182,7 @@ jobs:
             - `heltec_v4_companion_radio_wifi` — Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
 
             ### Repeaters and infrastructure
-            - `heltec_v4_repeater` — Standard continuously available OLED LoRa repeater.
+            - `heltec_v4_solar_repeater` — Solar LoRa repeater with critical-battery recovery, default power saving and OLED off at startup.
             - `heltec_v4_expansionkit_repeater` — Repeater with Heltec expansion-kit sensor and accessory-bus support.
             - `heltec_v4_repeater_bridge_espnow` — Continuously available bridge between MeshCore LoRa and ESP-NOW.
 

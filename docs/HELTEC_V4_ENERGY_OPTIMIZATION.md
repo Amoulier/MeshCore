@@ -23,7 +23,17 @@ not a substitute for measuring conducted RF power on V4.2 and V4.3 hardware.
 
 ## Supported targets
 
-The distribution builds the same ten Heltec V4 OLED targets as official MeshCore.
+The distribution builds ten Heltec V4 OLED targets. Solar Repeater replaces the official standard Repeater; the other nine roles are retained.
+
+## Solar Repeater
+
+`heltec_v4_solar_repeater` inherits the shared repeater implementation. It starts
+with the OLED off, defaults to local advertisements every thirty minutes, enables
+power saving with a thirty-second initial delay, and omits PSRAM. The solar
+profile uses its own battery curve, suspends operation after confirmed critical
+battery readings below 3500 mV, and checks recovery every sixty seconds until
+3650 mV is reached. OTA requires at least 3650 mV. Stored preferences take
+precedence over new-install defaults. No headless Solar target is included.
 
 ## Common changes
 
@@ -46,8 +56,8 @@ The distribution builds the same ten Heltec V4 OLED targets as official MeshCore
 - Production BLE and Wi-Fi targets no longer enable verbose transport logging.
 - Repeater, Room Server and Sensor initialize the board and low-voltage guard
   before starting the debug serial port.
-- New-install local advertisements are less frequent: sixteen minutes for the
-  standard Repeater, Room Server and Sensor.
+- New-install local advertisements are less frequent: thirty minutes for Solar Repeater and sixteen minutes for
+  Room Server and Sensor.
 
 ## Framework limitation recorded by the audit
 
