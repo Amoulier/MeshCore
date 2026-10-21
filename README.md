@@ -32,7 +32,7 @@ The distribution contains ten Heltec V4 OLED targets, replacing the official sta
 
 | PlatformIO environment | Purpose |
 | --- | --- |
-| `heltec_v4_companion_radio_ble` | BLE Companion that remains continuously discoverable |
+| `heltec_v4_companion_radio_ble` | BLE Companion with automatic Bluetooth shutdown after five disconnected minutes |
 | `heltec_v4_companion_radio_usb` | USB Companion node |
 | `heltec_v4_companion_radio_wifi` | Wi-Fi Companion with modem power saving |
 | `heltec_v4_solar_repeater` | Solar repeater with battery recovery and power saving |
@@ -77,6 +77,8 @@ The retained targets use cooperative idle, BLE advertising/connection scheduling
 ### Standard profile
 
 Standard Companion, Repeater, Room Server, Sensor, Bridge, Terminal and KISS targets retain continuous availability appropriate to their role. They receive the common ADC, OLED, GPS, LED, radio, storage and idle improvements with continuous availability.
+
+Bluetooth turns off after five minutes without a connection; active connections are retained. To reconnect afterward, open the node's Bluetooth page and hold PRG to enable Bluetooth again. LoRa reception continues while Bluetooth is off.
 
 BLE Companion builds also support optional Wi-Fi configured through the Companion CLI. Wi-Fi stays off without credentials; saved network changes apply after reboot. See the connectivity and telemetry integration section in `docs/HELTEC_V4_ENERGY_OPTIMIZATION.md`.
 

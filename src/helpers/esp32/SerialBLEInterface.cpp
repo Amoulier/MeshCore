@@ -109,9 +109,9 @@ void SerialBLEInterface::updatePowerPolicy()
   const unsigned long now = millis();
 
 #if defined(HELTEC_V4_BLE_AUTO_OFF_MSEC) && HELTEC_V4_BLE_AUTO_OFF_MSEC > 0
-  // The explicit low-power Companion trades unattended discoverability for
-  // lower draw. Bluetooth can be restored locally from the node's Bluetooth
-  // page with a long PRG press; the standard BLE target never auto-disables.
+  // Companion trades unattended discoverability for lower draw after the
+  // configured disconnected interval. Restore Bluetooth locally from the
+  // node's Bluetooth page with a long PRG press.
   if (_isEnabled && pServer->getConnectedCount() == 0 && disconnected_since &&
       static_cast<uint32_t>(now - disconnected_since) >= HELTEC_V4_BLE_AUTO_OFF_MSEC) {
     disable();
