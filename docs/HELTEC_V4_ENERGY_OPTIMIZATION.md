@@ -79,7 +79,10 @@ the pinned framework.
 - Changes to a slower advertising interval after that minute.
 - Requests short connection intervals while data is active.
 - Requests longer intervals and slave latency after ten seconds without data.
-- Remains enabled and discoverable indefinitely.
+- Turns Bluetooth off after five minutes without a connection, matching the former
+  BLE low-power variant. Connected sessions are not shut down by this timer.
+- Restore Bluetooth from the node's Bluetooth page with a long PRG press; enabling
+  it starts a fresh five-minute window. LoRa continues while Bluetooth is off.
 
 ### Standard Wi-Fi Companion
 

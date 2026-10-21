@@ -177,7 +177,7 @@ jobs:
             ## Firmware variants
 
             ### Companion
-            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; remains discoverable continuously.
+            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; Bluetooth turns off after five disconnected minutes and can be restored locally with PRG.
             - `heltec_v4_companion_radio_usb` - Companion for a computer or host connected through USB serial.
             - `heltec_v4_companion_radio_wifi` - Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
 
