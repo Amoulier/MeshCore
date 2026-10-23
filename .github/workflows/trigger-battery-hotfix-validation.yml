@@ -15,5 +15,5 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Dispatch current-main battery validation
-        run: gh workflow run validate-release-ble-battery-hotfix.yml --repo "${GITHUB_REPOSITORY}" --ref main
+      - name: Dispatch current-main battery and max-TX validation
+        run: gh workflow run apply-ble-battery-max-tx-v1.1.1.yml --repo "${GITHUB_REPOSITORY}" --ref main
