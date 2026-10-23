@@ -995,7 +995,7 @@ void MyMesh::begin() {
   _prefs.sf = constrain(_prefs.sf, 5, 12);
   _prefs.cr = constrain(_prefs.cr, 5, 8);
   _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);
-#if defined(HELTEC_V4_FORCE_MAX_TX) && HELTEC_V4_FORCE_MAX_TX
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
   _prefs.tx_power_dbm = MAX_LORA_TX_POWER;
 #endif
   _prefs.gps_enabled = constrain(_prefs.gps_enabled, 0, 1);  // Ensure boolean 0 or 1
@@ -1467,7 +1467,7 @@ void MyMesh::handleCmdFrame(size_t len) {
   } else if (cmd_frame[0] == CMD_SET_RADIO_TX_POWER && len >= 2) {
     int8_t power = (int8_t)cmd_frame[1];
     if (power < -9 || power > MAX_LORA_TX_POWER
-#if defined(HELTEC_V4_FORCE_MAX_TX) && HELTEC_V4_FORCE_MAX_TX
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
         || power != MAX_LORA_TX_POWER
 #endif
         ) {
