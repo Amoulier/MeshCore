@@ -47,6 +47,19 @@ jobs:
           [[ "${release_tag}" =~ ^heltec-v4-energy-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
           echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
 
+      - name: Verify BLE battery and maximum-TX invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'BLEDevice::deinit(false)' src/helpers/esp32/SerialBLEInterface.cpp
+          grep -Fq 'isFullyPoweredDown()' src/helpers/esp32/SerialBLEInterface.h
+          grep -Fq 'board.sleep(1)' examples/companion_radio/main.cpp
+          grep -Fq 'buttonWakeupPin' src/helpers/ESP32Board.h
+          grep -Fq -- '-D LORA_TX_POWER=22' variants/heltec_v4/platformio.ini
+          grep -Fq -- '-D HELTEC_V4_FORCE_MAX_TX=1' variants/heltec_v4/platformio.ini
+          grep -Fq 'dbm = MAX_LORA_TX_POWER;' src/helpers/radiolib/RadioLibWrappers.cpp
+          grep -Fq -- '-D MAX_LORA_TX_POWER=22' variants/heltec_v4/platformio.ini
+
       - name: Set up build environment
         uses: ./.github/actions/setup-build-environment
 
@@ -147,7 +160,14 @@ jobs:
           permanent PIN has been configured. The OLED can be disabled locally
           from the node and restored with the PRG button.
 
-          Stable fork release. Physical qualification coverage is described in the release notes.
+          After five disconnected minutes, Companion BLE fully powers down the
+          ESP32-S3 Bluetooth stack and light-sleeps while the SX1262 remains in
+          continuous receive. Use the Bluetooth page and a long PRG press to
+          reboot cleanly and restore BLE.
+
+          Every role keeps TX locked to the FEM-aware maximum estimated 22 dBm
+          antenna-path ceiling. GC1109 uses 11 dBm SX1262 input; KCT8103L uses
+          9 dBm SX1262 input.
           EOF
 
           archive="MeshCore-Heltec-V4-all-variants-${RELEASE_TAG}.zip"
@@ -174,10 +194,29 @@ jobs:
             - `*-merged.bin`: complete image for a fresh flash or recovery at `0x0`;
             - `*-ota.bin`: application image for a compatible update path.
 
+            ## Battery-runtime hotfix
+
+            The BLE Companion no longer only stops advertisements when its
+            five-minute disconnected timer expires. It fully deinitializes
+            Bluedroid and the ESP32-S3 Bluetooth controller, then enters explicit
+            light sleep whenever the mesh is idle. The SX1262 remains in
+            continuous receive and wakes the MCU through DIO1; PRG and a
+            one-second maintenance timer are also wake sources. Restoring BLE
+            from the Bluetooth page performs a clean reboot and preserves the
+            node identity, contacts, channels and saved settings.
+
+            ## Maximum transmit policy
+
+            All Heltec V4 variants keep transmission at the maximum permitted by
+            the fork's existing FEM-aware estimated 22 dBm antenna-path ceiling.
+            GC1109 hardware applies 11 dBm to the SX1262 and KCT8103L hardware
+            applies 9 dBm. Lower saved values or client commands cannot reduce
+            physical TX power. RX profiles still affect reception only.
+
             ## Firmware variants
 
             ### Companion
-            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; Bluetooth turns off after five disconnected minutes and can be restored locally with PRG.
+            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; after five disconnected minutes it fully powers Bluetooth down and light-sleeps while preserving LoRa RX. PRG restores BLE through a clean reboot.
             - `heltec_v4_companion_radio_usb` - Companion for a computer or host connected through USB serial.
             - `heltec_v4_companion_radio_wifi` - Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
 
@@ -196,21 +235,14 @@ jobs:
             and all integrity hashes are centralized in `INSTALLATION.txt` and
             `SHA256SUMS.txt`.
 
-            Main changes include cooperative ESP32 idle, cached battery telemetry,
-            persistent OLED/GPS power control, staged BLE advertising, Wi-Fi modem
-            saving, optional ESP-NOW receive windows, adaptive noise calibration,
-            role-specific peripheral builds, and the existing FEM-aware estimated 22 dBm ceiling.
+            The release build verifies the BLE-off implementation, PRG/DIO1/timer
+            wake paths, maximum-TX flags, all ten firmware targets, both binary
+            image formats and ESP image headers.
 
-            Validation: all 82 native tests and all ten firmware builds passed before
-            integration. The release rebuild validates both image formats for every role.
-            Includes upstream stability fixes, optional Wi-Fi for BLE Companion,
-            authenticated scoped telemetry subscriptions and GPS diagnostics.
-
-            Physical qualification remains incomplete: current, RF, sensitivity,
-            authenticated messaging, Wi-Fi/ESP-NOW operation, solar battery recovery
-            and battery runtime still need validation on V4.2/GC1109 and
-            V4.3/KCT8103L hardware. Stable is the publication channel; it does not
-            indicate that these measurements have been completed.
+            Physical qualification remains incomplete: current draw, conducted RF
+            power, sensitivity, authenticated messaging, Wi-Fi/ESP-NOW operation,
+            solar battery recovery and full battery runtime still require measurement
+            on final V4.2/GC1109 and V4.3/KCT8103L hardware.
           files: |
             out/*-merged.bin
             out/*-ota.bin
