@@ -6,6 +6,10 @@
 #define DEFAULT_FEM_RX_GAIN 0
 #endif
 
+#ifndef HELTEC_V4_HIGH_POWER
+#define HELTEC_V4_HIGH_POWER 1
+#endif
+
 typedef enum {
   GC1109_PA,
   KCT8103L_PA,
@@ -27,6 +31,9 @@ public:
   void setLnaCanControl(bool can_control) { lna_can_control = can_control; }
   bool isLNAEnabled() const { return lna_enabled; }
   LoRaFEMType getFEMType() const { return fem_type; }
+  bool isHighPowerPath() const { return fem_type == GC1109_PA || fem_type == KCT8103L_PA; }
+  bool isDetectionCertain() const { return fem_type != GC1109_PA; }
+  const char *getFEMName() const;
 
 private:
   LoRaFEMType fem_type = OTHER_FEM_TYPES;
