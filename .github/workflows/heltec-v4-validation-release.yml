@@ -76,7 +76,7 @@ jobs:
 
           short_sha="$(git rev-parse --short=8 HEAD)"
           build_date="$(date -u '+%d-%b-%Y')"
-          firmware_version="${RELEASE_TAG}-${short_sha}"
+          firmware_version="${RELEASE_TAG#heltec-v4-energy-}-${short_sha}"
           export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS:-} -DFIRMWARE_BUILD_DATE='\"${build_date}\"' -DFIRMWARE_VERSION='\"${firmware_version}\"'"
 
           pio run -e "${TARGET}"
@@ -166,11 +166,14 @@ jobs:
           After five disconnected minutes, Companion BLE fully powers down the
           ESP32-S3 Bluetooth stack and light-sleeps while the SX1262 remains in
           continuous receive. Use the Bluetooth page and a long PRG press to
-          reboot cleanly and restore BLE.
+          rebuild the encrypted GATT service and restore BLE without rebooting.
+          Computer USB, active BLE/Wi-Fi/GPS, OLED, buzzer or pending mesh work
+          inhibit MCU sleep. Test-only USB sleep overrides are not included.
 
-          Every role keeps TX locked to the FEM-aware maximum estimated 22 dBm
-          antenna-path ceiling. GC1109 uses 11 dBm SX1262 input; KCT8103L uses
-          9 dBm SX1262 input.
+          High-power Companion BLE targets nominal 28 dBm using the detected
+          FEM table (21 dBm SX1262 input on KCT8103L). Other roles retain their
+          estimated 22 dBm ceiling: 11 dBm SX1262 input on GC1109 or 9 dBm on
+          KCT8103L. These are table estimates, not measured RF output.
           EOF
 
           archive="MeshCore-Heltec-V4-all-variants-${RELEASE_TAG}.zip"
@@ -242,6 +245,14 @@ jobs:
             The release build verifies the BLE-off implementation, PRG/DIO1/timer
             wake paths, maximum-TX flags, all ten firmware targets, both binary
             image formats and ESP image headers.
+
+            Physical V4.3/KCT8103L validation received all 168 numbered over-air
+            test packets: 96 with MCU sleep enabled, 48 in awake baselines and
+            24 from the Heltec to an official-firmware XIAO. The two sleep windows
+            accumulated 226.928 seconds asleep with zero sleep/RX/core errors.
+            No TX reduction was made. Five BLE suspend/resume cycles and PRG
+            display restoration also passed. This close-range sample does not
+            establish range or guaranteed absence of loss in other conditions.
 
             Physical qualification remains incomplete: current draw, conducted RF
             power, sensitivity, authenticated messaging, Wi-Fi/ESP-NOW operation,
