@@ -200,17 +200,18 @@ jobs:
             ## Battery-runtime hotfix
 
             The BLE Companion no longer only stops advertisements when its
-            five-minute disconnected timer expires. It fully deinitializes
+            five-minute disconnected timer expires. It unregisters/frees GATT attributes and disables
             Bluedroid and the ESP32-S3 Bluetooth controller, then enters explicit
             light sleep whenever the mesh is idle. The SX1262 remains in
             continuous receive and wakes the MCU through DIO1; PRG and a
-            one-second maintenance timer are also wake sources. Restoring BLE
-            from the Bluetooth page performs a clean reboot and preserves the
-            node identity, contacts, channels and saved settings.
+            bounded 20 ms maintenance timer are also wake sources. Restoring BLE
+            from the Bluetooth page rebuilds GATT without rebooting and preserves
+            node identity, contacts, channels, queued messages and saved settings.
 
             ## Maximum transmit policy
 
-            All Heltec V4 variants keep transmission at the maximum permitted by
+            High-power BLE targets nominal 28 dBm with 21 dBm SX1262 input.
+            Other Heltec V4 variants keep transmission at the maximum permitted by
             the fork's existing FEM-aware estimated 22 dBm antenna-path ceiling.
             GC1109 hardware applies 11 dBm to the SX1262 and KCT8103L hardware
             applies 9 dBm. Lower saved values or client commands cannot reduce
@@ -219,7 +220,7 @@ jobs:
             ## Firmware variants
 
             ### Companion
-            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; after five disconnected minutes it fully powers Bluetooth down and light-sleeps while preserving LoRa RX. PRG restores BLE through a clean reboot.
+            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; after five disconnected minutes it fully powers Bluetooth down and light-sleeps while preserving LoRa RX. PRG restores BLE without rebooting; high-power BLE targets nominal 28 dBm.
             - `heltec_v4_companion_radio_usb` - Companion for a computer or host connected through USB serial.
             - `heltec_v4_companion_radio_wifi` - Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
 
