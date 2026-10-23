@@ -1,0 +1,686 @@
+name: Apply Heltec V4 power-class patch
+
+on:
+  push:
+    branches:
+      - fix/heltec-v4-power-class-max-tx
+    paths:
+      - .github/workflows/patch-heltec-v4-power-class.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/heltec-v4-power-class-max-tx
+
+      - name: Apply power-class detection and maximum-output policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text(encoding="utf-8")
+
+          def write(path, text):
+              Path(path).write_text(text, encoding="utf-8")
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              return text.replace(old, new, 1)
+
+          # Pure policy helpers used by firmware and native tests.
+          path = "variants/heltec_v4/HeltecV4PowerPolicy.h"
+          text = read(path)
+          old = """enum class PowerProfile : uint8_t {
+            Standard = 0,
+            SolarRepeater = 1
+          };
+          """
+          new = """enum class PowerProfile : uint8_t {
+            Standard = 0,
+            SolarRepeater = 1
+          };
+
+          enum class FemControlDetection : uint8_t {
+            GC1109 = 0,
+            KCT8103L = 1,
+            DirectSX1262 = 2,
+            Unknown = 3
+          };
+
+          // GPIO2 is connected to the external FEM control input on high-power
+          // boards. A high-power FEM holds the line at a stable level while a
+          // low-power/direct-SX1262 board follows the ESP32's internal pulls.
+          constexpr FemControlDetection classifyFemControlReads(bool pulldown_high,
+                                                                 bool pullup_high)
+          {
+            if (!pulldown_high && !pullup_high) {
+              return FemControlDetection::GC1109;
+            }
+            if (pulldown_high && pullup_high) {
+              return FemControlDetection::KCT8103L;
+            }
+            if (!pulldown_high && pullup_high) {
+              return FemControlDetection::DirectSX1262;
+            }
+            return FemControlDetection::Unknown;
+          }
+
+          constexpr int8_t HIGH_POWER_MAX_OUTPUT_DBM = 28;
+          constexpr int8_t LOW_POWER_MAX_OUTPUT_DBM = 21;
+          constexpr int8_t SX1262_MAX_INPUT_DBM = 22;
+          """
+          text = replace_once(text, old, new, "power policy enum insertion")
+          write(path, text)
+
+          # Expand the FEM type model and expose concise diagnostics.
+          path = "variants/heltec_v4/LoRaFEMControl.h"
+          text = read(path)
+          text = replace_once(
+              text,
+              """typedef enum {
+            GC1109_PA,
+            KCT8103L_PA,
+            OTHER_FEM_TYPES
+          } LoRaFEMType;
+          """,
+              """typedef enum {
+            GC1109_PA,
+            KCT8103L_PA,
+            DIRECT_SX1262,
+            UNKNOWN_FEM
+          } LoRaFEMType;
+          """,
+              "FEM enum")
+          text = replace_once(
+              text,
+              """  bool isLNAEnabled() const { return lna_enabled; }
+            LoRaFEMType getFEMType() const { return fem_type; }
+          """,
+              """  bool isLNAEnabled() const { return lna_enabled; }
+            LoRaFEMType getFEMType() const { return fem_type; }
+            const char* getFEMName() const;
+            const char* getPowerClassName() const;
+            const char* getDetectedRevisionName() const;
+            bool hasExternalFEM() const { return fem_type == GC1109_PA || fem_type == KCT8103L_PA; }
+            bool isHighPowerClass() const { return hasExternalFEM(); }
+            bool isLowPowerClass() const { return fem_type == DIRECT_SX1262; }
+            bool isDetectionCertain() const { return fem_type != UNKNOWN_FEM; }
+          """,
+              "FEM getters")
+          write(path, text)
+
+          # Replace the one-level FEM heuristic with a pull-bias classification.
+          path = "variants/heltec_v4/LoRaFEMControl.cpp"
+          text = read(path)
+          text = replace_once(text, '#include "LoRaFEMControl.h"\n', '#include "LoRaFEMControl.h"\n#include "HeltecV4PowerPolicy.h"\n', "power policy include")
+          init_re = re.compile(r"void LoRaFEMControl::init\(\)\n\{.*?\n\}\n\nvoid LoRaFEMControl::setSleepModeEnable", re.S)
+          init_new = r'''namespace {
+
+          bool sampleFemControlLine(uint8_t mode)
+          {
+            pinMode(P_LORA_KCT8103L_PA_CSD, mode);
+            delayMicroseconds(250);
+            uint8_t high_samples = 0;
+            constexpr uint8_t samples = 9;
+            for (uint8_t i = 0; i < samples; ++i) {
+              if (digitalRead(P_LORA_KCT8103L_PA_CSD) == HIGH) {
+                ++high_samples;
+              }
+              delayMicroseconds(100);
+            }
+            return high_samples >= 6;
+          }
+
+          } // namespace
+
+          void LoRaFEMControl::init()
+          {
+            lna_can_control = false;
+
+            pinMode(P_LORA_PA_POWER, OUTPUT);
+            digitalWrite(P_LORA_PA_POWER, HIGH);
+            gpio_hold_dis(static_cast<gpio_num_t>(P_LORA_PA_POWER));
+            pinMode(P_LORA_PA_POWER, OUTPUT);
+            digitalWrite(P_LORA_PA_POWER, HIGH);
+            delay(5);
+
+            gpio_hold_dis(static_cast<gpio_num_t>(P_LORA_KCT8103L_PA_CSD));
+            const bool pulldown_high = sampleFemControlLine(INPUT_PULLDOWN);
+            const bool pullup_high = sampleFemControlLine(INPUT_PULLUP);
+            const heltec_v4::FemControlDetection detection =
+                heltec_v4::classifyFemControlReads(pulldown_high, pullup_high);
+
+            if (detection == heltec_v4::FemControlDetection::KCT8103L) {
+              fem_type = KCT8103L_PA;
+              pinMode(P_LORA_KCT8103L_PA_CSD, OUTPUT);
+              digitalWrite(P_LORA_KCT8103L_PA_CSD, HIGH);
+              gpio_hold_dis(static_cast<gpio_num_t>(P_LORA_KCT8103L_PA_CTX));
+              pinMode(P_LORA_KCT8103L_PA_CTX, OUTPUT);
+              digitalWrite(P_LORA_KCT8103L_PA_CTX, lna_enabled ? LOW : HIGH);
+              lna_can_control = true;
+            } else if (detection == heltec_v4::FemControlDetection::GC1109) {
+              fem_type = GC1109_PA;
+              pinMode(P_LORA_GC1109_PA_EN, OUTPUT);
+              digitalWrite(P_LORA_GC1109_PA_EN, HIGH);
+              gpio_hold_dis(static_cast<gpio_num_t>(P_LORA_GC1109_PA_TX_EN));
+              pinMode(P_LORA_GC1109_PA_TX_EN, OUTPUT);
+              digitalWrite(P_LORA_GC1109_PA_TX_EN, LOW);
+            } else if (detection == heltec_v4::FemControlDetection::DirectSX1262) {
+              // The low-power HTIT-WB32LAF-N path has no external FEM. Keep the
+              // unused FEM supply disabled and drive the SX1262 directly.
+              fem_type = DIRECT_SX1262;
+              lna_enabled = false;
+              pinMode(P_LORA_KCT8103L_PA_CSD, INPUT);
+              digitalWrite(P_LORA_PA_POWER, LOW);
+            } else {
+              // Inconsistent pull readings should be rare. Use the high-power
+              // GC1109 control sequence and its safe 28 dBm mapping, but report
+              // the hardware as unknown rather than inventing an identity.
+              fem_type = UNKNOWN_FEM;
+              lna_enabled = false;
+              pinMode(P_LORA_GC1109_PA_EN, OUTPUT);
+              digitalWrite(P_LORA_GC1109_PA_EN, HIGH);
+              gpio_hold_dis(static_cast<gpio_num_t>(P_LORA_GC1109_PA_TX_EN));
+              pinMode(P_LORA_GC1109_PA_TX_EN, OUTPUT);
+              digitalWrite(P_LORA_GC1109_PA_TX_EN, LOW);
+            }
+          }
+
+          void LoRaFEMControl::setSleepModeEnable'''
+          text, count = init_re.subn(init_new, text, count=1)
+          if count != 1:
+              raise SystemExit(f"FEM init replacement: expected 1, found {count}")
+
+          text = replace_once(
+              text,
+              """  if (fem_type == GC1109_PA) {
+              digitalWrite(P_LORA_GC1109_PA_EN, LOW);
+              digitalWrite(P_LORA_GC1109_PA_TX_EN, LOW);
+            } else if (fem_type == KCT8103L_PA) {
+              digitalWrite(P_LORA_KCT8103L_PA_CSD, LOW);
+              digitalWrite(P_LORA_KCT8103L_PA_CTX, HIGH);
+            }
+          """,
+              """  if (fem_type == GC1109_PA || fem_type == UNKNOWN_FEM) {
+              digitalWrite(P_LORA_GC1109_PA_EN, LOW);
+              digitalWrite(P_LORA_GC1109_PA_TX_EN, LOW);
+            } else if (fem_type == KCT8103L_PA) {
+              digitalWrite(P_LORA_KCT8103L_PA_CSD, LOW);
+              digitalWrite(P_LORA_KCT8103L_PA_CTX, HIGH);
+            } else if (fem_type == DIRECT_SX1262) {
+              digitalWrite(P_LORA_PA_POWER, LOW);
+            }
+          """,
+              "sleep mode handling")
+          text = replace_once(
+              text,
+              """  if (fem_type == GC1109_PA) {
+              digitalWrite(P_LORA_GC1109_PA_EN, HIGH);
+              digitalWrite(P_LORA_GC1109_PA_TX_EN, HIGH);
+            } else if (fem_type == KCT8103L_PA) {
+              digitalWrite(P_LORA_KCT8103L_PA_CSD, HIGH);
+              digitalWrite(P_LORA_KCT8103L_PA_CTX, HIGH);
+            }
+          """,
+              """  if (fem_type == GC1109_PA || fem_type == UNKNOWN_FEM) {
+              digitalWrite(P_LORA_PA_POWER, HIGH);
+              digitalWrite(P_LORA_GC1109_PA_EN, HIGH);
+              digitalWrite(P_LORA_GC1109_PA_TX_EN, HIGH);
+            } else if (fem_type == KCT8103L_PA) {
+              digitalWrite(P_LORA_PA_POWER, HIGH);
+              digitalWrite(P_LORA_KCT8103L_PA_CSD, HIGH);
+              digitalWrite(P_LORA_KCT8103L_PA_CTX, HIGH);
+            } else if (fem_type == DIRECT_SX1262) {
+              digitalWrite(P_LORA_PA_POWER, LOW);
+            }
+          """,
+              "TX mode handling")
+          text = replace_once(
+              text,
+              """  if (fem_type == GC1109_PA) {
+              digitalWrite(P_LORA_GC1109_PA_EN, HIGH);
+              digitalWrite(P_LORA_GC1109_PA_TX_EN, LOW);
+            } else if (fem_type == KCT8103L_PA) {
+              digitalWrite(P_LORA_KCT8103L_PA_CSD, HIGH);
+              digitalWrite(P_LORA_KCT8103L_PA_CTX, lna_enabled ? LOW : HIGH);
+            }
+          """,
+              """  if (fem_type == GC1109_PA || fem_type == UNKNOWN_FEM) {
+              digitalWrite(P_LORA_PA_POWER, HIGH);
+              digitalWrite(P_LORA_GC1109_PA_EN, HIGH);
+              digitalWrite(P_LORA_GC1109_PA_TX_EN, LOW);
+            } else if (fem_type == KCT8103L_PA) {
+              digitalWrite(P_LORA_PA_POWER, HIGH);
+              digitalWrite(P_LORA_KCT8103L_PA_CSD, HIGH);
+              digitalWrite(P_LORA_KCT8103L_PA_CTX, lna_enabled ? LOW : HIGH);
+            } else if (fem_type == DIRECT_SX1262) {
+              digitalWrite(P_LORA_PA_POWER, LOW);
+            }
+          """,
+              "RX mode handling")
+
+          sleep_re = re.compile(r"void LoRaFEMControl::setRxModeEnableWhenMCUSleep\(\)\n\{.*?\n\}\n\nvoid LoRaFEMControl::setLNAEnable", re.S)
+          sleep_new = r'''void LoRaFEMControl::setRxModeEnableWhenMCUSleep()
+          {
+            if (fem_type == DIRECT_SX1262) {
+              digitalWrite(P_LORA_PA_POWER, LOW);
+              gpio_hold_en(static_cast<gpio_num_t>(P_LORA_PA_POWER));
+              gpio_deep_sleep_hold_en();
+              return;
+            }
+
+            digitalWrite(P_LORA_PA_POWER, HIGH);
+            gpio_hold_en(static_cast<gpio_num_t>(P_LORA_PA_POWER));
+
+            if (fem_type == GC1109_PA || fem_type == UNKNOWN_FEM) {
+              digitalWrite(P_LORA_GC1109_PA_EN, HIGH);
+              gpio_hold_en(static_cast<gpio_num_t>(P_LORA_GC1109_PA_EN));
+              digitalWrite(P_LORA_GC1109_PA_TX_EN, LOW);
+              gpio_hold_en(static_cast<gpio_num_t>(P_LORA_GC1109_PA_TX_EN));
+            } else if (fem_type == KCT8103L_PA) {
+              digitalWrite(P_LORA_KCT8103L_PA_CSD, HIGH);
+              gpio_hold_en(static_cast<gpio_num_t>(P_LORA_KCT8103L_PA_CSD));
+              digitalWrite(P_LORA_KCT8103L_PA_CTX, lna_enabled ? LOW : HIGH);
+              gpio_hold_en(static_cast<gpio_num_t>(P_LORA_KCT8103L_PA_CTX));
+            }
+            gpio_deep_sleep_hold_en();
+          }
+
+          void LoRaFEMControl::setLNAEnable'''
+          text, count = sleep_re.subn(sleep_new, text, count=1)
+          if count != 1:
+              raise SystemExit(f"sleep RX replacement: expected 1, found {count}")
+
+          text += r'''
+
+          const char* LoRaFEMControl::getFEMName() const
+          {
+            switch (fem_type) {
+              case GC1109_PA: return "GC1109";
+              case KCT8103L_PA: return "KCT8103L";
+              case DIRECT_SX1262: return "DIRECT";
+              default: return "UNKNOWN";
+            }
+          }
+
+          const char* LoRaFEMControl::getPowerClassName() const
+          {
+            if (isHighPowerClass()) return "high";
+            if (isLowPowerClass()) return "low";
+            return "unknown";
+          }
+
+          const char* LoRaFEMControl::getDetectedRevisionName() const
+          {
+            if (fem_type == GC1109_PA) return "V4.2";
+            if (fem_type == KCT8103L_PA) return "V4.3";
+            return "V4.x";
+          }
+          '''
+          write(path, text)
+
+          # Board-level getters and diagnostics.
+          path = "variants/heltec_v4/HeltecV4Board.h"
+          text = read(path)
+          text = replace_once(
+              text,
+              """  int8_t getBattPercent() override;
+            int8_t mapRadioTxPower(int8_t requested_radio_dbm) override;
+          """,
+              """  int8_t getBattPercent() override;
+            int8_t mapRadioTxPower(int8_t requested_radio_dbm) override;
+            int8_t getAppliedRadioInputDbm() const { return last_radio_input_dbm; }
+            int8_t getEstimatedOutputPowerDbm() const;
+            int8_t getMaximumOutputPowerDbm() const;
+            const char* getRadioFemName() const { return loRaFEMControl.getFEMName(); }
+            const char* getRadioPowerClassName() const { return loRaFEMControl.getPowerClassName(); }
+            const char* getRadioRevisionName() const { return loRaFEMControl.getDetectedRevisionName(); }
+            const char* getRadioModelName() const;
+          """,
+              "board getters")
+          write(path, text)
+
+          path = "variants/heltec_v4/HeltecV4Board.cpp"
+          text = read(path)
+          text = replace_once(
+              text,
+              """#ifndef HELTEC_V4_MAX_OUTPUT_POWER_DBM
+          #define HELTEC_V4_MAX_OUTPUT_POWER_DBM 22
+          #endif
+          """,
+              """#ifndef HELTEC_V4_HIGH_POWER_OUTPUT_DBM
+          #define HELTEC_V4_HIGH_POWER_OUTPUT_DBM 28
+          #endif
+          #ifndef HELTEC_V4_LOW_POWER_OUTPUT_DBM
+          #define HELTEC_V4_LOW_POWER_OUTPUT_DBM 21
+          #endif
+          #ifndef HELTEC_V4_MAX_OUTPUT_POWER_DBM
+          #define HELTEC_V4_MAX_OUTPUT_POWER_DBM HELTEC_V4_HIGH_POWER_OUTPUT_DBM
+          #endif
+          """,
+              "board power constants")
+
+          map_re = re.compile(r"int8_t HeltecV4Board::mapRadioTxPower\(int8_t requested_radio_dbm\)\n\{.*?\n\}\n\nconst char \*HeltecV4Board::getManufacturerName\(\) const\n\{.*?\n\}", re.S)
+          map_new = r'''int8_t HeltecV4Board::mapRadioTxPower(int8_t requested_radio_dbm)
+          {
+          #if defined(HELTEC_V4_FORCE_MAX_TX) && HELTEC_V4_FORCE_MAX_TX
+            requested_radio_dbm = heltec_v4::SX1262_MAX_INPUT_DBM;
+          #endif
+            if (requested_radio_dbm < -9) {
+              requested_radio_dbm = -9;
+            } else if (requested_radio_dbm > heltec_v4::SX1262_MAX_INPUT_DBM) {
+              requested_radio_dbm = heltec_v4::SX1262_MAX_INPUT_DBM;
+            }
+
+            last_requested_radio_dbm = requested_radio_dbm;
+            if (loRaFEMControl.getFEMType() == GC1109_PA) {
+              last_radio_input_dbm = heltec_v4::clampGc1109RadioInput(
+                  requested_radio_dbm, HELTEC_V4_HIGH_POWER_OUTPUT_DBM);
+            } else if (loRaFEMControl.getFEMType() == KCT8103L_PA) {
+              last_radio_input_dbm = heltec_v4::clampKct8103lRadioInput(
+                  requested_radio_dbm, HELTEC_V4_HIGH_POWER_OUTPUT_DBM);
+            } else if (loRaFEMControl.getFEMType() == DIRECT_SX1262) {
+              last_radio_input_dbm = heltec_v4::SX1262_MAX_INPUT_DBM;
+            } else {
+              // Unknown hardware uses the maximum input that is safe for the
+              // high-power GC1109 path instead of risking FEM overdrive.
+              last_radio_input_dbm = heltec_v4::clampGc1109RadioInput(
+                  requested_radio_dbm, HELTEC_V4_HIGH_POWER_OUTPUT_DBM);
+            }
+            return last_radio_input_dbm;
+          }
+
+          int8_t HeltecV4Board::getEstimatedOutputPowerDbm() const
+          {
+            if (loRaFEMControl.getFEMType() == GC1109_PA) {
+              return heltec_v4::gc1109EstimatedOutput(last_radio_input_dbm);
+            }
+            if (loRaFEMControl.getFEMType() == KCT8103L_PA) {
+              return heltec_v4::kct8103lEstimatedOutput(last_radio_input_dbm);
+            }
+            if (loRaFEMControl.getFEMType() == DIRECT_SX1262) {
+              return HELTEC_V4_LOW_POWER_OUTPUT_DBM;
+            }
+            return heltec_v4::gc1109EstimatedOutput(last_radio_input_dbm);
+          }
+
+          int8_t HeltecV4Board::getMaximumOutputPowerDbm() const
+          {
+            return loRaFEMControl.getFEMType() == DIRECT_SX1262
+                ? HELTEC_V4_LOW_POWER_OUTPUT_DBM
+                : HELTEC_V4_HIGH_POWER_OUTPUT_DBM;
+          }
+
+          const char* HeltecV4Board::getRadioModelName() const
+          {
+            if (loRaFEMControl.isHighPowerClass()) return "HTIT-WB32LAF";
+            if (loRaFEMControl.isLowPowerClass()) return "HTIT-WB32LAF-N";
+            return "unknown";
+          }
+
+          const char *HeltecV4Board::getManufacturerName() const
+          {
+          #ifdef HELTEC_LORA_V4_TFT
+            if (loRaFEMControl.getFEMType() == KCT8103L_PA) return "Heltec V4.3 High Power TFT";
+            if (loRaFEMControl.getFEMType() == GC1109_PA) return "Heltec V4.2 High Power TFT";
+            if (loRaFEMControl.getFEMType() == DIRECT_SX1262) return "Heltec V4 Low Power TFT";
+            return "Heltec V4 Power Unknown TFT";
+          #else
+            if (loRaFEMControl.getFEMType() == KCT8103L_PA) return "Heltec V4.3 High Power OLED";
+            if (loRaFEMControl.getFEMType() == GC1109_PA) return "Heltec V4.2 High Power OLED";
+            if (loRaFEMControl.getFEMType() == DIRECT_SX1262) return "Heltec V4 Low Power OLED";
+            return "Heltec V4 Power Unknown OLED";
+          #endif
+          }'''
+          text, count = map_re.subn(map_new, text, count=1)
+          if count != 1:
+              raise SystemExit(f"board map/getManufacturer replacement: expected 1, found {count}")
+
+          old_power = """  if (strcmp(command, \"get radio.power\") == 0) {
+            const int8_t estimated_output_dbm = loRaFEMControl.getFEMType() == GC1109_PA
+                ? heltec_v4::gc1109EstimatedOutput(last_radio_input_dbm)
+                : (loRaFEMControl.getFEMType() == KCT8103L_PA
+                     ? heltec_v4::kct8103lEstimatedOutput(last_radio_input_dbm)
+                     : last_radio_input_dbm);
+            sprintf(reply, \"> requested-radio:%ddBm,applied-radio:%ddBm,estimated-output:%ddBm\",
+                    last_requested_radio_dbm, last_radio_input_dbm, estimated_output_dbm);
+            return true;
+          }
+          """
+          new_power = """  if (strcmp(command, \"get radio.hardware\") == 0) {
+            sprintf(reply,
+                    \"> model:%s,rev:%s,fem:%s,power-class:%s,max-output:%ddBm,detection:%s\",
+                    getRadioModelName(), getRadioRevisionName(), getRadioFemName(),
+                    getRadioPowerClassName(), getMaximumOutputPowerDbm(),
+                    loRaFEMControl.isDetectionCertain() ? \"gpio-bias\" : \"fallback\");
+            return true;
+          }
+
+          if (strcmp(command, \"get radio.power\") == 0) {
+            sprintf(reply,
+                    \"> forced-max:on,class:%s,fem:%s,requested-radio:%ddBm,applied-radio:%ddBm,estimated-output:%ddBm\",
+                    getRadioPowerClassName(), getRadioFemName(), last_requested_radio_dbm,
+                    last_radio_input_dbm, getEstimatedOutputPowerDbm());
+            return true;
+          }
+          """
+          text = replace_once(text, old_power, new_power, "radio diagnostics")
+          write(path, text)
+
+          # Compile-time policy: 28 dBm high-power output target; direct SX1262
+          # remains at its maximum input and official 21 +/- 1 dBm class.
+          path = "variants/heltec_v4/platformio.ini"
+          text = read(path)
+          text = replace_once(
+              text,
+              """  -D LORA_TX_POWER=22
+            -D HELTEC_V4_FORCE_MAX_TX=1
+            -D LORA_RADIO_BOOT_POWER=0
+            -D MAX_LORA_TX_POWER=22
+          """,
+              """  -D LORA_TX_POWER=22
+            -D HELTEC_V4_FORCE_MAX_TX=1
+            -D HELTEC_V4_HIGH_POWER_OUTPUT_DBM=28
+            -D HELTEC_V4_LOW_POWER_OUTPUT_DBM=21
+            -D HELTEC_V4_MAX_OUTPUT_POWER_DBM=28
+            -D LORA_RADIO_BOOT_POWER=0
+            -D MAX_LORA_TX_POWER=22
+          """,
+              "platform power flags")
+          write(path, text)
+
+          # Update the forced-max explanation without changing the request path.
+          path = "src/helpers/radiolib/RadioLibWrappers.cpp"
+          text = read(path)
+          text = replace_once(
+              text,
+              """  // The Heltec V4 fork intentionally keeps physical TX at the FEM-aware
+            // maximum. The board maps this request to 11 dBm SX1262 input on GC1109 or
+            // 9 dBm on KCT8103L, preserving the estimated 22 dBm antenna-path ceiling.
+            // Lower stored values or client commands remain protocol-compatible but do
+            // not reduce actual transmitted power.
+          """,
+              """  // The Heltec V4 fork intentionally keeps physical TX at the maximum
+            // supported by the detected hardware class. High-power GC1109/KCT8103L
+            // boards map this request to an estimated 28 dBm path; direct-SX1262
+            // low-power boards use the SX1262 maximum and report the official 21 +/- 1
+            // dBm class. Lower stored values or client commands cannot reduce TX.
+          """,
+              "forced max comment")
+          write(path, text)
+
+          # Make the hardware class visible directly on the Companion OLED.
+          path = "examples/companion_radio/ui-new/UITask.cpp"
+          text = read(path)
+          old = """      // tx power,  noise floor
+                display.setCursor(0, 42);
+                sprintf(tmp, \"TX: %ddBm\", _node_prefs->tx_power_dbm);
+                display.print(tmp);
+                display.setCursor(0, 53);
+                sprintf(tmp, \"Noise floor: %d\", radio_driver.getNoiseFloor());
+                display.print(tmp);
+          """
+          new = """      // Actual forced-maximum TX and detected RF hardware class.
+          #ifdef HELTEC_LORA_V4
+                display.setCursor(0, 42);
+                sprintf(tmp, \"TX:%ddBm IN:%d\", board.getEstimatedOutputPowerDbm(),
+                        board.getAppliedRadioInputDbm());
+                display.print(tmp);
+                display.setCursor(0, 53);
+                sprintf(tmp, \"%s %s NF:%d\", board.getRadioPowerClassName(),
+                        board.getRadioFemName(), radio_driver.getNoiseFloor());
+                display.print(tmp);
+          #else
+                display.setCursor(0, 42);
+                sprintf(tmp, \"TX: %ddBm\", _node_prefs->tx_power_dbm);
+                display.print(tmp);
+                display.setCursor(0, 53);
+                sprintf(tmp, \"Noise floor: %d\", radio_driver.getNoiseFloor());
+                display.print(tmp);
+          #endif
+          """
+          text = replace_once(text, old, new, "OLED radio page")
+          write(path, text)
+
+          # Replace radio policy tests with high/low class coverage.
+          path = "test/test_heltec_v4_power_policy/test_heltec_v4_power_policy.cpp"
+          text = read(path)
+          start = text.index("TEST(HeltecV4RadioPower")
+          end = text.index("\nint main", start)
+          tests = r'''TEST(HeltecV4HardwareDetection, ClassifiesExternalAndDirectPaths)
+          {
+            EXPECT_EQ(FemControlDetection::GC1109, classifyFemControlReads(false, false));
+            EXPECT_EQ(FemControlDetection::KCT8103L, classifyFemControlReads(true, true));
+            EXPECT_EQ(FemControlDetection::DirectSX1262, classifyFemControlReads(false, true));
+            EXPECT_EQ(FemControlDetection::Unknown, classifyFemControlReads(true, false));
+          }
+
+          TEST(HeltecV4RadioPower, MapsRequestedAntennaPowerToSx1262Input)
+          {
+            EXPECT_EQ(11, gc1109RadioInputPower(22));
+            EXPECT_EQ(9, kct8103lRadioInputPower(22));
+            EXPECT_EQ(21, gc1109RadioInputPower(HIGH_POWER_MAX_OUTPUT_DBM));
+            EXPECT_EQ(21, kct8103lRadioInputPower(HIGH_POWER_MAX_OUTPUT_DBM));
+          }
+
+          TEST(HeltecV4RadioPower, HighPowerBoardsReachTheOfficial28DbmClass)
+          {
+            const int8_t gc_input = clampGc1109RadioInput(SX1262_MAX_INPUT_DBM,
+                                                          HIGH_POWER_MAX_OUTPUT_DBM);
+            const int8_t kct_input = clampKct8103lRadioInput(SX1262_MAX_INPUT_DBM,
+                                                             HIGH_POWER_MAX_OUTPUT_DBM);
+            EXPECT_EQ(21, gc_input);
+            EXPECT_EQ(21, kct_input);
+            EXPECT_EQ(HIGH_POWER_MAX_OUTPUT_DBM, gc1109EstimatedOutput(gc_input));
+            EXPECT_EQ(HIGH_POWER_MAX_OUTPUT_DBM, kct8103lEstimatedOutput(kct_input));
+          }
+
+          TEST(HeltecV4RadioPower, DirectSx1262UsesMaximumInputForLowPowerModel)
+          {
+            EXPECT_EQ(22, SX1262_MAX_INPUT_DBM);
+            EXPECT_EQ(21, LOW_POWER_MAX_OUTPUT_DBM);
+          }
+
+          TEST(HeltecV4RadioPower, LegacyLowerRequestsCannotExceedClassLimits)
+          {
+            EXPECT_EQ(10, clampGc1109RadioInput(10, HIGH_POWER_MAX_OUTPUT_DBM));
+            EXPECT_EQ(10, clampKct8103lRadioInput(10, HIGH_POWER_MAX_OUTPUT_DBM));
+            EXPECT_EQ(-9, clampGc1109RadioInput(-12, HIGH_POWER_MAX_OUTPUT_DBM));
+            EXPECT_EQ(-5, clampKct8103lRadioInput(-5, HIGH_POWER_MAX_OUTPUT_DBM));
+          }
+          '''
+          text = text[:start] + tests + text[end:]
+          write(path, text)
+
+          # Document the corrected official high/low power classes and command.
+          path = "README.md"
+          text = read(path)
+          text = replace_once(
+              text,
+              """- Heltec V4.2 boards with the GC1109 front end.
+          - Heltec V4.3 boards with the KCT8103L front end.
+          """,
+              """- High-power `HTIT-WB32LAF` boards: V4.2/GC1109 and V4.3/KCT8103L, rated 28 +/- 1 dBm.
+          - Low-power `HTIT-WB32LAF-N-*` boards with a direct SX1262 path, rated 21 +/- 1 dBm.
+          """,
+              "README hardware scope")
+          text = replace_once(
+              text,
+              """- Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware ceiling that keeps estimated output at or below 22 dBm.
+          - Maximum physical TX is locked across every Heltec V4 role; lower saved values or client commands cannot reduce it.
+          """,
+              """- Pull-bias detection distinguishes V4.2/GC1109, V4.3/KCT8103L, and the low-power direct-SX1262 model.
+          - Maximum physical TX is locked across every role: 28 dBm estimated for high-power boards and the SX1262 maximum for the official 21 +/- 1 dBm low-power class.
+          """,
+              "README shared behavior")
+          old_tx = """The physical transmit path therefore stays at the existing FEM-aware estimated **22 dBm antenna-path ceiling** at all times:
+
+          - V4.2 / GC1109 applies 11 dBm at the SX1262 input.
+          - V4.3 / KCT8103L applies 9 dBm at the SX1262 input.
+
+          Lower persisted values or client commands remain accepted for protocol compatibility, but they cannot reduce physical transmit power. A 20 microsecond FEM-settle guard prevents the first preamble symbol from starting while the external front end is changing into TX mode.
+          """
+          new_tx = """The physical transmit path stays at the maximum supported by the detected hardware class:
+
+          - High-power V4.2 / GC1109: 21 dBm SX1262 input, estimated 28 dBm output.
+          - High-power V4.3 / KCT8103L: 21 dBm SX1262 input, estimated 28 dBm output.
+          - Low-power `HTIT-WB32LAF-N-*`: 22 dBm SX1262 input, official 21 +/- 1 dBm output class.
+          - Unknown/inconsistent detection: the firmware uses the high-power-safe 21 dBm SX1262 fallback and reports the class as unknown.
+
+          Lower persisted values or client commands remain accepted for protocol compatibility, but they cannot reduce physical transmit power. A 20 microsecond FEM-settle guard prevents the first preamble symbol from starting while the external front end is changing into TX mode.
+          """
+          text = replace_once(text, old_tx, new_tx, "README transmit policy")
+          text = replace_once(text, "get radio.power\n", "get radio.hardware\nget radio.power\n", "README command list")
+          text = replace_once(
+              text,
+              """`get power.status` reports raw millivolts, the filtered percentage and the active power profile. `get radio.power` reports the maximum request presented to the board, the value actually applied after the FEM limit, and the estimated antenna output.
+          """,
+              """`get power.status` reports raw millivolts, the filtered percentage and the active power profile. `get radio.hardware` reports the detected model, revision, FEM and high/low power class. `get radio.power` reports the forced maximum request, the applied SX1262 input and estimated output.
+          """,
+              "README command explanation")
+          write(path, text)
+
+          # Ensure CI rejects a regression back to the former 22 dBm high-power cap.
+          path = ".github/workflows/heltec-v4-ci.yml"
+          text = read(path)
+          anchor = """          bash -n build.sh
+
+          expected_targets=(
+          """
+          replacement = """          bash -n build.sh
+          grep -q -- '-D HELTEC_V4_MAX_OUTPUT_POWER_DBM=28' variants/heltec_v4/platformio.ini
+          grep -q -- '-D HELTEC_V4_FORCE_MAX_TX=1' variants/heltec_v4/platformio.ini
+          grep -q 'DirectSX1262' variants/heltec_v4/HeltecV4PowerPolicy.h
+          grep -q 'BLEDevice::deinit(false)' src/helpers/esp32/SerialBLEInterface.cpp
+
+          expected_targets=(
+          """
+          text = replace_once(text, anchor, replacement, "CI policy checks")
+          write(path, text)
+
+          print("Applied Heltec V4 high/low power classification and maximum-TX policy")
+          PY
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add variants/heltec_v4 src/helpers/radiolib/RadioLibWrappers.cpp \
+                  examples/companion_radio/ui-new/UITask.cpp \
+                  test/test_heltec_v4_power_policy/test_heltec_v4_power_policy.cpp \
+                  README.md .github/workflows/heltec-v4-ci.yml
+          git commit -m "fix(heltec-v4): detect power class and use hardware maximum TX"
+          git push origin HEAD:fix/heltec-v4-power-class-max-tx
