@@ -177,7 +177,7 @@ jobs:
             ## Firmware variants
 
             ### Companion
-            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; Bluetooth turns off after five disconnected minutes and can be restored locally with PRG.
+            - `heltec_v4_companion_radio_ble` - High-power BLE Companion with nominal 28 dBm TX, guarded MCU light sleep and five-minute disconnected Bluetooth shutdown; restore locally with PRG.
             - `heltec_v4_companion_radio_usb` - Companion for a computer or host connected through USB serial.
             - `heltec_v4_companion_radio_wifi` - Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
 
@@ -199,7 +199,9 @@ jobs:
             Main changes include cooperative ESP32 idle, cached battery telemetry,
             persistent OLED/GPS power control, staged BLE advertising, Wi-Fi modem
             saving, optional ESP-NOW receive windows, adaptive noise calibration,
-            role-specific peripheral builds, and the existing FEM-aware estimated 22 dBm ceiling.
+            role-specific peripheral builds, a nominal 28 dBm ceiling for high-power BLE,
+            and the existing estimated 22 dBm ceiling in other roles. BLE sleep keeps
+            the SX1262 and FEM in continuous RX and wakes through DIO1, PRG or a timer.
 
             Validation: all 82 native tests and all ten firmware builds passed before
             integration. The release rebuild validates both image formats for every role.

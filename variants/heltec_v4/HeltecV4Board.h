@@ -25,6 +25,10 @@ class HeltecV4Board : public ESP32Board {
   uint8_t critical_low_readings = 0;
   int8_t last_requested_radio_dbm = 0;
   int8_t last_radio_input_dbm = 0;
+  uint32_t light_sleep_count = 0, light_sleep_gpio_wakes = 0;
+  uint32_t light_sleep_timer_wakes = 0;
+  uint64_t light_sleep_usec = 0;
+  int light_sleep_error = 0;
 
   uint16_t readBatteryMilliVoltsRaw();
   void updateReportedBatteryPercent(uint16_t battery_millivolts);
@@ -43,6 +47,7 @@ public:
   void begin();
   void loop() override;
   void idle(uint32_t delay_millis = 1);
+  bool sleepWhileReceiving(uint32_t duration_millis);
   void enterDeepSleep(uint32_t secs);
   void attachDynamicPrefs(KeyValueStore *prefs);
   bool handleCommand(const char *command, uint32_t sender_timestamp, char *reply) override;

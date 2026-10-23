@@ -7,11 +7,19 @@
 #define FIRMWARE_VER_CODE 14
 
 #ifndef FIRMWARE_BUILD_DATE
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+#define FIRMWARE_BUILD_DATE "23 Oct 2026"
+#else
 #define FIRMWARE_BUILD_DATE "19 Oct 2026"
+#endif
 #endif
 
 #ifndef FIRMWARE_VERSION
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+#define FIRMWARE_VERSION "heltec-v4-sleep-hp"
+#else
 #define FIRMWARE_VERSION "heltec-v4-upstream-2026-10"
+#endif
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)

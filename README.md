@@ -32,7 +32,7 @@ The distribution contains ten Heltec V4 OLED targets, replacing the official sta
 
 | PlatformIO environment | Purpose |
 | --- | --- |
-| `heltec_v4_companion_radio_ble` | BLE Companion with automatic Bluetooth shutdown after five disconnected minutes |
+| `heltec_v4_companion_radio_ble` | High-power BLE Companion with MCU light sleep and five-minute disconnected Bluetooth timeout |
 | `heltec_v4_companion_radio_usb` | USB Companion node |
 | `heltec_v4_companion_radio_wifi` | Wi-Fi Companion with modem power saving |
 | `heltec_v4_solar_repeater` | Solar repeater with battery recovery and power saving |
@@ -55,12 +55,34 @@ The retained targets share these hardware-focused changes where applicable:
 - Persistent OLED shutdown, physical VEXT control, automatic-wake suppression, and restoration by holding PRG.
 - GPS disabled without powering, resetting, probing, or delaying boot; its UART is stopped while disabled and restarted when enabled.
 - TX/status LED suppression for unattended operation.
-- Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware ceiling that keeps estimated output at or below 22 dBm.
+- Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware estimated output ceiling of 22 dBm for existing roles and 28 dBm for the high-power BLE Companion.
 - Temporary-file, backup, and rename-based persistence for identity and configuration stores, with a write guard during critical battery recovery.
 - Fast noise-floor calibration during the first minute followed by a lower-overhead thirty-second maintenance cadence.
 - Less frequent new-install advertisements: thirty minutes for Solar Repeater and sixteen minutes for Room Server and Sensor.
 
-### Transmit power
+### High-power BLE Companion sleep and transmit policy
+
+`heltec_v4_companion_radio_ble` now targets the amplified high-power Heltec V4.
+It forces the nominal maximum output of 28 dBm using the detected FEM gain table
+(21 dBm SX1262 input on KCT8103L). Lower saved or app-requested TX settings do not
+reduce this target's output. Other firmware roles retain their 22 dBm estimated
+ceiling. These are firmware table estimates, not measured antenna output.
+
+After five disconnected minutes, BLE releases its GATT objects and suspends both
+the host and controller. PRG can enable it again without rebooting or discarding
+queued LoRa messages. The processor can then enter light sleep in windows of at
+most 20 ms while the SX1262 and FEM stay in continuous RX. DIO1 and PRG wake it;
+a timer services background tasks. Pending transmissions, Wi-Fi, GPS, the lit
+OLED, buzzer activity and an attached computer's USB connection prevent sleep.
+The RX boost and LNA settings are preserved.
+
+Local diagnostic commands are `get power.sleep`, `get power.runtime`,
+`set power.sleep on`, `set power.sleep off`, `set bluetooth on`, and
+`set bluetooth off`. Changes to these runtime controls are not persisted.
+USB sleep override and synthetic IRQ diagnostics are compiled only into the
+local test build, never the normal firmware target.
+
+### Transmit power in other roles
 
 The MeshCore `tx` setting keeps its historical meaning: requested **SX1262 input power**, not antenna output.
 
@@ -72,7 +94,7 @@ This is a firmware estimate, not an RF certification result. Measure conducted o
 
 The CPU remains at the established fixed 80 MHz. The pinned Arduino-ESP32 framework was built without ESP-IDF dynamic frequency scaling, automatic light sleep, Bluetooth controller modem sleep, or disconnected-station ESP-NOW power management. Application flags cannot enable those precompiled features after the fact.
 
-The retained targets use cooperative idle, BLE advertising/connection scheduling, Wi-Fi modem power saving and reconnect backoff. Framework-level DFS and automatic light sleep are not enabled.
+The retained targets use cooperative idle, BLE advertising/connection scheduling, Wi-Fi modem power saving and reconnect backoff. Framework-level DFS and automatic light sleep are not enabled. The high-power BLE Companion uses explicit light sleep once its Bluetooth controller is suspended and other sleep guards permit it.
 
 ### Standard profile
 

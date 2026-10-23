@@ -125,6 +125,10 @@ bool RadioLibWrapper::isInRecvMode() const {
   return (state & ~STATE_INT_READY) == STATE_RX;
 }
 
+void RadioLibWrapper::pollLatchedReceiveIRQ() {
+  if (isInRecvMode() && digitalRead(_board->getIRQGpio()) == HIGH) setFlag();
+}
+
 int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
   int len = 0;
   if (state & STATE_INT_READY) {

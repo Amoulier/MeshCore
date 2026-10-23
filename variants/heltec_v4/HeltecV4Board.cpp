@@ -5,6 +5,9 @@
 #include <driver/rtc_io.h>
 #include <esp_idf_version.h>
 #include <esp_sleep.h>
+#include <esp_timer.h>
+#include <esp_bt.h>
+#include <esp_bt_main.h>
 #if defined(CONFIG_PM_ENABLE) && CONFIG_PM_ENABLE
 #include <esp_pm.h>
 #endif
@@ -503,8 +506,57 @@ void HeltecV4Board::idle(uint32_t delay_millis)
   delay(delay_millis == 0 ? 1 : delay_millis);
 }
 
+bool HeltecV4Board::sleepWhileReceiving(uint32_t duration_millis)
+{
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  // The application checks pending work and RX mode. Check asynchronous sources
+  // again here: a packet or PRG press may have arrived since that check.
+  const gpio_num_t irq = static_cast<gpio_num_t>(P_LORA_DIO_1);
+  const gpio_num_t button = static_cast<gpio_num_t>(PIN_USER_BTN);
+  if (inhibit_sleep || duration_millis == 0 || gpio_get_level(irq) ||
+      gpio_get_level(button) == USER_BTN_PRESSED ||
+      esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED ||
+      esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_ENABLED) return false;
+
+  // GPIO wakeup changes the interrupt type. Mask the RadioLib ISR until its
+  // edge configuration is restored; the application polls the latched DIO1
+  // afterward so an arrival in this interval cannot lose its notification.
+  gpio_intr_disable(irq);
+  esp_err_t err = gpio_wakeup_enable(irq, GPIO_INTR_HIGH_LEVEL);
+  if (err == ESP_OK) err = gpio_wakeup_enable(button, USER_BTN_PRESSED == LOW ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
+  if (err == ESP_OK) err = esp_sleep_enable_gpio_wakeup();
+  if (err == ESP_OK) err = esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(min(duration_millis, 20U)) * 1000ULL);
+  const int64_t before = esp_timer_get_time();
+  bool slept = false;
+  if (err == ESP_OK && !gpio_get_level(irq) && gpio_get_level(button) != USER_BTN_PRESSED) {
+    err = esp_light_sleep_start();
+    if (err == ESP_OK) {
+      slept = true;
+      light_sleep_count++;
+      light_sleep_usec += esp_timer_get_time() - before;
+      if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO) light_sleep_gpio_wakes++;
+      if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) light_sleep_timer_wakes++;
+    }
+  }
+  light_sleep_error = err;
+  gpio_wakeup_disable(irq);
+  gpio_wakeup_disable(button);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+  gpio_set_intr_type(irq, GPIO_INTR_POSEDGE);
+  gpio_intr_enable(irq);
+  return slept;
+#else
+  (void)duration_millis;
+  return false;
+#endif
+}
+
 int8_t HeltecV4Board::mapRadioTxPower(int8_t requested_radio_dbm)
 {
+#if defined(HELTEC_V4_FORCE_MAX_TX) && HELTEC_V4_FORCE_MAX_TX
+  requested_radio_dbm = 22;
+#endif
   if (requested_radio_dbm < -9) {
     requested_radio_dbm = -9;
   } else if (requested_radio_dbm > 22) {
@@ -582,6 +634,12 @@ void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)
 
 bool HeltecV4Board::handleCommand(const char *command, uint32_t sender_timestamp, char *reply)
 {
+  if (strcmp(command, "get power.sleep") == 0) {
+    sprintf(reply, "> sleeps:%lu,gpio:%lu,timer:%lu,ms:%llu,error:%d",
+            static_cast<unsigned long>(light_sleep_count), static_cast<unsigned long>(light_sleep_gpio_wakes),
+            static_cast<unsigned long>(light_sleep_timer_wakes), static_cast<unsigned long long>(light_sleep_usec / 1000), light_sleep_error);
+    return true;
+  }
   (void)sender_timestamp;
 
   if (strcmp(command, "get radio.fem.rxgain") == 0) {

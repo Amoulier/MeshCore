@@ -7,6 +7,9 @@ output.
 
 ## RF policy
 
+The defaults below describe the other roles. The amplified BLE Companion uses
+the high-power policy detailed at the end of this document instead.
+
 - New installations default to 11 dBm SX1262 input instead of 10 dBm.
 - On GC1109 hardware, 11 dBm input maps to the existing estimate of 22 dBm at
   the antenna path.
@@ -167,3 +170,29 @@ Hardware qualification still requires:
 - Wi-Fi reconnect tests with the access point available and unavailable.
 - ESP-NOW delivery tests across active and inactive windows.
 - Sensor sample, transmit and subscription-expiry tests.
+
+## High-power BLE Companion: explicit MCU light sleep
+
+The BLE target forces maximum nominal 28 dBm output with a FEM-aware SX1262
+input clamp. Existing lower saved/app TX settings are overridden in this target;
+the RX profile is preserved. All other roles retain their existing TX policy.
+
+Bluetooth shutdown now unregisters and frees the encrypted GATT service and
+characteristics, disables Bluedroid, and disables the Bluetooth controller.
+Reactivation re-registers the application, PIN/security settings and GATT service.
+It preserves bonds, the node identity, application queues and persistent settings.
+
+The companion sleeps only with the radio in RX, no queued outgoing work, Bluetooth
+suspended, Wi-Fi disabled, GPS disabled, OLED off and buzzer quiet. Manual sleep
+is inhibited when the USB Serial/JTAG peripheral is connected to a computer,
+including a two-second disconnect/enumeration grace period. Radio DIO1 is a
+high-level wake source and PRG is a low-level source. A timer bounds sleep to
+20 ms. The SX1262 and FEM remain powered and are not duty-cycled. IRQ setup masks
+the RadioLib interrupt, restores its rising edge afterward and polls the latched
+DIO1 level to recover arrivals during that interval. The loop still yields to
+FreeRTOS after sleep. Diagnostic counters distinguish successful sleeps, timer
+and GPIO wakes, cumulative sleep time and the last error.
+
+Physical qualification must distinguish MCU/timer/DIO1 and GATT tests from a
+controlled over-air packet-loss test. The latter requires a second radio. Actual
+current, runtime and conducted RF output also require external measurement.

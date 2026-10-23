@@ -5,6 +5,9 @@
 #include <WiFi.h>
 #endif
 #include <Mesh.h>
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+extern bool handleCompanionPowerCommand(const char* command, char* reply);
+#endif
 
 #define CMD_APP_START                 1
 #define CMD_SEND_TXT_MSG              2
@@ -992,6 +995,9 @@ void MyMesh::begin() {
   _prefs.sf = constrain(_prefs.sf, 5, 12);
   _prefs.cr = constrain(_prefs.cr, 5, 8);
   _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);
+#if defined(HELTEC_V4_FORCE_MAX_TX) && HELTEC_V4_FORCE_MAX_TX
+  _prefs.tx_power_dbm = MAX_LORA_TX_POWER;
+#endif
   _prefs.gps_enabled = constrain(_prefs.gps_enabled, 0, 1);  // Ensure boolean 0 or 1
   _prefs.gps_interval = constrain(_prefs.gps_interval, 0, 86400);  // Max 24 hours
 
@@ -1458,9 +1464,13 @@ void MyMesh::handleCmdFrame(size_t len) {
                          (uint32_t)cr);
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     }
-  } else if (cmd_frame[0] == CMD_SET_RADIO_TX_POWER) {
+  } else if (cmd_frame[0] == CMD_SET_RADIO_TX_POWER && len >= 2) {
     int8_t power = (int8_t)cmd_frame[1];
-    if (power < -9 || power > MAX_LORA_TX_POWER) {
+    if (power < -9 || power > MAX_LORA_TX_POWER
+#if defined(HELTEC_V4_FORCE_MAX_TX) && HELTEC_V4_FORCE_MAX_TX
+        || power != MAX_LORA_TX_POWER
+#endif
+        ) {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     } else {
       _prefs.tx_power_dbm = power;
@@ -2079,6 +2089,10 @@ void MyMesh::enterCLIRescue() {
 
 bool MyMesh::handleCommand(const char* command, uint32_t sender_timestamp, char* reply) {
   while (*command == ' ') command++; // skip leading spaces
+
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  if (sender_timestamp == 0 && handleCompanionPowerCommand(command, reply)) return true;
+#endif
 
   if (strlen(command) > 4 && command[2] == '|') { // optional prefix (for companion radio CLI)
     memcpy(reply, command, 3);                    // reflect the prefix back

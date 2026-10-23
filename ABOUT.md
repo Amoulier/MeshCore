@@ -99,4 +99,4 @@ Ten targets are retained, with Solar Repeater replacing the official standard Re
 They retain role-specific peripheral builds, cached battery telemetry,
 cooperative ESP32 idle, BLE/Wi-Fi power saving and runtime RX profiles.
 New installations request 11 dBm SX1262 input while the detected-FEM policy
-retains the 22 dBm estimated antenna-output ceiling.
+retains the 22 dBm estimated antenna-output ceiling in other roles. The high-power BLE Companion now forces nominal 28 dBm output and supports guarded explicit MCU light sleep.
