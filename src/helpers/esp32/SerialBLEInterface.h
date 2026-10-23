@@ -26,6 +26,7 @@ class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLE
   bool peer_address_valid;
   bool connection_profile_known;
   bool idle_connection_profile;
+  bool stack_deinitialized;
   uint8_t peer_address[ESP_BD_ADDR_LEN];
 
   struct Frame {
@@ -76,6 +77,7 @@ public:
     peer_address_valid = false;
     connection_profile_known = false;
     idle_connection_profile = false;
+    stack_deinitialized = false;
     _isEnabled = false;
     _last_write = 0;
     last_conn_id = 0;
@@ -92,6 +94,7 @@ public:
   bool isEnabled() const override { return _isEnabled; }
   bool isConnected() const override;
   bool isWriteBusy() const override;
+  bool isFullyPoweredDown() const { return stack_deinitialized; }
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;
 };

@@ -326,5 +326,22 @@ void loop() {
   }
 #endif
 
+#if defined(ESP32) && defined(BLE_PIN_CODE)
+  // Once the five-minute BLE timeout fully powers down Bluedroid and the
+  // controller, keep the CPU in light sleep whenever the mesh is idle. The
+  // SX1262 remains in continuous RX and wakes immediately through DIO1. PRG
+  // and a one-second timer also wake the MCU. If Wi-Fi has been configured,
+  // it remains authoritative and generic sleep stays inhibited.
+  bool can_sleep_after_ble_shutdown =
+      bluetooth_interface.isFullyPoweredDown() && !the_mesh.hasPendingWork();
+#ifdef ENABLE_WIFI_INTERFACE
+  can_sleep_after_ble_shutdown = can_sleep_after_ble_shutdown && !wifi_enabled;
+#endif
+  if (can_sleep_after_ble_shutdown) {
+    board.sleep(1);
+    return;
+  }
+#endif
+
   board.idle();
 }
