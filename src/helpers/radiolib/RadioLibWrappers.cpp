@@ -48,6 +48,14 @@ uint32_t RadioLibWrapper::getRngSeed() {
 }
 
 void RadioLibWrapper::setTxPower(int8_t dbm) {
+#if defined(HELTEC_V4_FORCE_MAX_TX) && HELTEC_V4_FORCE_MAX_TX
+  // The Heltec V4 fork intentionally keeps physical TX at the FEM-aware
+  // maximum. The board maps this request to 11 dBm SX1262 input on GC1109 or
+  // 9 dBm on KCT8103L, preserving the estimated 22 dBm antenna-path ceiling.
+  // Lower stored values or client commands remain protocol-compatible but do
+  // not reduce actual transmitted power.
+  dbm = MAX_LORA_TX_POWER;
+#endif
 #if defined(USE_LR2021)
   idle();
 #endif

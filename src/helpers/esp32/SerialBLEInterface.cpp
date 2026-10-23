@@ -15,8 +15,8 @@
 // Advertising units are 0.625 ms.
 #define BLE_FAST_ADV_MIN 160
 #define BLE_FAST_ADV_MAX 240
-#define BLE_SLOW_ADV_MIN 800
-#define BLE_SLOW_ADV_MAX 1600
+#define BLE_SLOW_ADV_MIN 3200
+#define BLE_SLOW_ADV_MAX 4800
 
 SerialBLEInterface* SerialBLEInterface::power_instance = nullptr;
 

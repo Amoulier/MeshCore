@@ -32,7 +32,7 @@ The distribution contains ten Heltec V4 OLED targets, replacing the official sta
 
 | PlatformIO environment | Purpose |
 | --- | --- |
-| `heltec_v4_companion_radio_ble` | High-power BLE Companion with MCU light sleep and five-minute disconnected Bluetooth timeout |
+| `heltec_v4_companion_radio_ble` | BLE Companion that fully powers Bluetooth down after five disconnected minutes and light-sleeps while LoRa remains available |
 | `heltec_v4_companion_radio_usb` | USB Companion node |
 | `heltec_v4_companion_radio_wifi` | Wi-Fi Companion with modem power saving |
 | `heltec_v4_solar_repeater` | Solar repeater with battery recovery and power saving |
@@ -49,13 +49,15 @@ The retained targets share these hardware-focused changes where applicable:
 
 - Calibrated 12-bit battery sampling using 15 averaged ADC readings, with a ten-second UI/telemetry cache and uncached safety checks.
 - Cooperative ESP32 idle in every role and removal of a duplicate board loop from the RadioLib wrapper.
-- Fast-then-slow BLE advertising, adaptive BLE connection intervals, Wi-Fi modem saving and reconnect backoff.
+- Fast-then-slow BLE advertising, adaptive BLE connection intervals, full Bluetooth-controller shutdown after the disconnected timeout, and explicit BLE-off light sleep.
+- Wi-Fi modem saving and reconnect backoff.
 - Role-specific environmental-sensor dependencies and I2C discovery instead of loading the entire sensor catalog into every firmware.
 - Heltec-specific open-circuit-voltage curves and a displayed percentage limited to one point of movement per minute.
 - Persistent OLED shutdown, physical VEXT control, automatic-wake suppression, and restoration by holding PRG.
 - GPS disabled without powering, resetting, probing, or delaying boot; its UART is stopped while disabled and restarted when enabled.
 - TX/status LED suppression for unattended operation.
-- Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware estimated output ceiling of 22 dBm for existing roles and 28 dBm for the high-power BLE Companion.
+- Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware estimated output ceiling of 28 dBm for high-power BLE and 22 dBm for other roles.
+- Maximum physical TX is locked across every Heltec V4 role; lower saved values or client commands cannot reduce it.
 - Temporary-file, backup, and rename-based persistence for identity and configuration stores, with a write guard during critical battery recovery.
 - Fast noise-floor calibration during the first minute followed by a lower-overhead thirty-second maintenance cadence.
 - Less frequent new-install advertisements: thirty minutes for Solar Repeater and sixteen minutes for Room Server and Sensor.
@@ -84,23 +86,28 @@ local test build, never the normal firmware target.
 
 ### Transmit power in other roles
 
-The MeshCore `tx` setting keeps its historical meaning: requested **SX1262 input power**, not antenna output.
+The MeshCore `tx` setting historically represents requested **SX1262 input power**, not antenna output. In this fork, every Heltec V4 target now forces that request to the maximum before the board-specific FEM mapping.
 
-New installations now default to **11 dBm** SX1262 input instead of 10 dBm. FEM-aware limiting applies 11 dBm on GC1109 and 9 dBm on KCT8103L, producing the existing estimated 22 dBm antenna-path ceiling on either revision. Persisted `tx` values are preserved during an update. A 20 microsecond FEM-settle guard prevents the first preamble symbol from starting while the external front end is changing into TX mode.
+In the other roles, the physical transmit path stays at the existing FEM-aware estimated **22 dBm antenna-path ceiling** at all times:
+
+- V4.2 / GC1109 applies 11 dBm at the SX1262 input.
+- V4.3 / KCT8103L applies 9 dBm at the SX1262 input.
+
+Lower persisted values or client commands remain accepted for protocol compatibility, but they cannot reduce physical transmit power. A 20 microsecond FEM-settle guard prevents the first preamble symbol from starting while the external front end is changing into TX mode.
 
 This is a firmware estimate, not an RF certification result. Measure conducted output on the final V4.2 or V4.3 assembly before relying on the value.
 
 ### CPU and framework boundary
 
-The CPU remains at the established fixed 80 MHz. The pinned Arduino-ESP32 framework was built without ESP-IDF dynamic frequency scaling, automatic light sleep, Bluetooth controller modem sleep, or disconnected-station ESP-NOW power management. Application flags cannot enable those precompiled features after the fact.
+The CPU remains at the established fixed 80 MHz. The pinned Arduino-ESP32 framework was built without ESP-IDF dynamic frequency scaling, framework-managed automatic light sleep, Bluetooth controller modem sleep, or disconnected-station ESP-NOW power management. Application flags cannot enable those precompiled features after the fact.
 
-The retained targets use cooperative idle, BLE advertising/connection scheduling, Wi-Fi modem power saving and reconnect backoff. Framework-level DFS and automatic light sleep are not enabled. The high-power BLE Companion uses explicit light sleep once its Bluetooth controller is suspended and other sleep guards permit it.
+The retained targets use cooperative idle, BLE advertising/connection scheduling, Wi-Fi modem power saving and reconnect backoff. The BLE Companion additionally uses explicit ESP32-S3 light sleep only after Bluedroid and the Bluetooth controller have been disabled. The SX1262 remains in continuous receive and wakes the MCU through DIO1; PRG and a bounded 20 ms maintenance timer are also wake sources.
 
 ### Standard profile
 
-Standard Companion, Repeater, Room Server, Sensor, Bridge, Terminal and KISS targets retain continuous availability appropriate to their role. They receive the common ADC, OLED, GPS, LED, radio, storage and idle improvements with continuous availability.
+Standard Companion, Room Server, Sensor, Bridge, Terminal and KISS targets retain the continuous availability appropriate to their role. They receive the common ADC, OLED, GPS, LED, radio, storage and idle improvements.
 
-Bluetooth turns off after five minutes without a connection; active connections are retained. To reconnect afterward, open the node's Bluetooth page and hold PRG to enable Bluetooth again. LoRa reception continues while Bluetooth is off.
+After five minutes without a BLE connection, the Companion unregisters/frees its GATT attributes and disables Bluedroid and the ESP32-S3 Bluetooth controller. It then light-sleeps whenever the mesh is idle while preserving continuous LoRa reception. To restore Bluetooth, open the node's Bluetooth page and hold PRG; the node rebuilds its encrypted GATT service without rebooting, preserving identity, contacts, channels, queued messages and saved settings. Active BLE connections are never stopped by the timer.
 
 BLE Companion builds also support optional Wi-Fi configured through the Companion CLI. Wi-Fi stays off without credentials; saved network changes apply after reboot. See the connectivity and telemetry integration section in `docs/HELTEC_V4_ENERGY_OPTIMIZATION.md`.
 
@@ -123,9 +130,9 @@ set display off
 set display on
 ```
 
-`get power.status` reports raw millivolts, the filtered percentage and the active power profile. `get radio.power` reports requested SX1262 input, the value actually applied after the FEM limit, and estimated antenna output.
+`get power.status` reports raw millivolts, the filtered percentage and the active power profile. `get radio.power` reports the maximum request presented to the board, the value actually applied after the FEM limit, and the estimated antenna output.
 
-RX profiles affect reception only:
+RX profiles affect reception only and never alter TX power:
 
 - `range`: SX1262 boosted RX plus the external LNA where controllable.
 - `balanced`: normal SX1262 RX plus the external LNA.
@@ -140,7 +147,7 @@ The Heltec V4 Companion does not require a computer or client-side CLI to disabl
 3. Release PRG when the screen requests it; the OLED and its claim on VEXT turn off and the preference is saved.
 4. To restore the OLED, hold PRG again for about one second.
 
-Turning off the OLED does not disable Bluetooth or LoRa. Incoming messages continue to be received without waking the screen. The restored display receives a new auto-off interval instead of switching off immediately.
+Turning off the OLED does not immediately disable Bluetooth or LoRa. Incoming messages continue to be received without waking the screen. The restored display receives a new auto-off interval instead of switching off immediately.
 
 ## Building
 
@@ -178,7 +185,7 @@ Keep the `-merged.bin` suffix intact because the supported flasher uses it to id
 
 Several upstream example targets contain development defaults such as `password`, `hello`, `myssid`, and `mypwd`. Replace these values before deploying a repeater, room server, sensor, or Wi-Fi companion. Do not commit production credentials.
 
-Confirm frequency, bandwidth, spreading factor, coding rate, requested transmit power, actual measured RF output, antenna system and regional requirements before transmitting. CI validates compilation and pure policy logic; it does not replace current-consumption, RF-power, reconnection, packet-delivery, full battery-discharge tests on the final hardware installation.
+Confirm frequency, bandwidth, spreading factor, coding rate, actual measured RF output, antenna system and regional requirements before transmitting. This fork intentionally does not permit reducing physical TX power through the normal `tx` setting. CI validates compilation and pure policy logic; it does not replace current-consumption, RF-power, reconnection, packet-delivery or full battery-discharge tests on the final hardware installation.
 
 ## Project direction
 
