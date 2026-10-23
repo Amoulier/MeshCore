@@ -12,6 +12,13 @@ class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLE
   BLEServer *pServer;
   BLEService *pService;
   BLECharacteristic *pTxCharacteristic;
+  BLECharacteristic *pRxCharacteristic = nullptr;
+  BLE2902 *pNotifyDescriptor = nullptr;
+  char saved_device_name[48] = {};
+  static SerialBLEInterface* power_instance;
+  volatile bool app_registered = false, service_deleted = false;
+  static void powerGattsEvent(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t* param);
+  void createService();
   bool deviceConnected;
   bool oldDeviceConnected;
   bool _isEnabled;
@@ -26,7 +33,10 @@ class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLE
   bool peer_address_valid;
   bool connection_profile_known;
   bool idle_connection_profile;
-  bool stack_deinitialized;
+  bool service_created = false;
+  bool controller_suspended = false;
+  bool gatt_rebuild_needed = false;
+  int power_error = 0;
   uint8_t peer_address[ESP_BD_ADDR_LEN];
 
   struct Frame {
@@ -46,6 +56,8 @@ class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLE
   void markActivity();
   void requestConnectionProfile(bool idle);
   void updatePowerPolicy();
+  void suspendController();
+  bool resumeController();
 
 protected:
   uint32_t onPassKeyRequest() override;
@@ -77,7 +89,6 @@ public:
     peer_address_valid = false;
     connection_profile_known = false;
     idle_connection_profile = false;
-    stack_deinitialized = false;
     _isEnabled = false;
     _last_write = 0;
     last_conn_id = 0;
@@ -93,8 +104,9 @@ public:
   void disable() override;
   bool isEnabled() const override { return _isEnabled; }
   bool isConnected() const override;
+  bool isControllerSuspended() const { return controller_suspended; }
+  int getPowerError() const { return power_error; }
   bool isWriteBusy() const override;
-  bool isFullyPoweredDown() const { return stack_deinitialized; }
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;
 };

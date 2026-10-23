@@ -1,7 +1,8 @@
 #include "SerialBLEInterface.h"
 #include "esp_mac.h"
 #include <esp_gap_ble_api.h>
-#include <esp_system.h>
+#include <esp_bt.h>
+#include <esp_bt_main.h>
 
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -11,20 +12,19 @@
 #define BLE_FAST_ADV_DURATION_MS 60000UL
 #define BLE_IDLE_CONNECTION_AFTER_MS 10000UL
 
-// Advertising units are 0.625 ms. Keep the initial discovery window fast,
-// then reduce the long-term advertising duty cycle until the five-minute
-// disconnected timeout powers Bluetooth down completely.
+// Advertising units are 0.625 ms.
 #define BLE_FAST_ADV_MIN 160
 #define BLE_FAST_ADV_MAX 240
 #define BLE_SLOW_ADV_MIN 3200
 #define BLE_SLOW_ADV_MAX 4800
 
-// This fork only builds the Heltec V4 ESP32-S3 BLE Companion. Stopping a GATT
-// service is not sufficient to remove the controller/host current, so the
-// Heltec build performs a full shutdown after the configured idle timeout.
-#if defined(HELTEC_LORA_V4) && !defined(HELTEC_V4_BLE_FULL_SHUTDOWN)
-#define HELTEC_V4_BLE_FULL_SHUTDOWN 1
-#endif
+SerialBLEInterface* SerialBLEInterface::power_instance = nullptr;
+
+void SerialBLEInterface::powerGattsEvent(esp_gatts_cb_event_t event, esp_gatt_if_t, esp_ble_gatts_cb_param_t* param) {
+  if (!power_instance) return;
+  if (event == ESP_GATTS_REG_EVT && param->reg.status == ESP_GATT_OK) power_instance->app_registered = true;
+  if (event == ESP_GATTS_DELETE_EVT) power_instance->service_deleted = true;
+}
 
 void SerialBLEInterface::begin(const char *prefix, char *name, uint32_t pin_code)
 {
@@ -38,6 +38,7 @@ void SerialBLEInterface::begin(const char *prefix, char *name, uint32_t pin_code
   }
   char dev_name[48];
   snprintf(dev_name, sizeof(dev_name), "%s%s", prefix, name);
+  memcpy(saved_device_name, dev_name, sizeof(saved_device_name));
 
   BLEDevice::init(dev_name);
   BLEDevice::setSecurityCallbacks(this);
@@ -49,20 +50,31 @@ void SerialBLEInterface::begin(const char *prefix, char *name, uint32_t pin_code
 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(this);
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  power_instance = this;
+  BLEDevice::setCustomGattsHandler(powerGattsEvent);
+#endif
+  createService();
+  pServer->getAdvertising()->addServiceUUID(SERVICE_UUID);
+}
+
+void SerialBLEInterface::createService()
+{
   pService = pServer->createService(SERVICE_UUID);
 
   pTxCharacteristic = pService->createCharacteristic(
       CHARACTERISTIC_UUID_TX,
       BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
   pTxCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM);
-  pTxCharacteristic->addDescriptor(new BLE2902());
+  pNotifyDescriptor = new BLE2902();
+  pTxCharacteristic->addDescriptor(pNotifyDescriptor);
 
-  BLECharacteristic *pRxCharacteristic =
+  pRxCharacteristic =
       pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
   pRxCharacteristic->setAccessPermissions(ESP_GATT_PERM_WRITE_ENC_MITM);
   pRxCharacteristic->setCallbacks(this);
 
-  pServer->getAdvertising()->addServiceUUID(SERVICE_UUID);
+  service_created = false;
 }
 
 void SerialBLEInterface::startAdvertising(bool fast)
@@ -118,12 +130,18 @@ void SerialBLEInterface::updatePowerPolicy()
 {
   const unsigned long now = millis();
 
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  if (!_isEnabled) {
+    suspendController();
+    return;
+  }
+#endif
+
 #if defined(HELTEC_V4_BLE_AUTO_OFF_MSEC) && HELTEC_V4_BLE_AUTO_OFF_MSEC > 0
   // Companion trades unattended discoverability for lower draw after the
   // configured disconnected interval. Restore Bluetooth locally from the
   // node's Bluetooth page with a long PRG press.
-  if (_isEnabled && pServer != NULL && pServer->getConnectedCount() == 0 &&
-      disconnected_since &&
+  if (_isEnabled && pServer->getConnectedCount() == 0 && disconnected_since &&
       static_cast<uint32_t>(now - disconnected_since) >= HELTEC_V4_BLE_AUTO_OFF_MSEC) {
     disable();
     return;
@@ -174,10 +192,8 @@ void SerialBLEInterface::onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl)
   } else {
     BLE_DEBUG_PRINTLN("Authentication Failure");
     disconnected_since = millis();
-    if (pServer != NULL) {
-      pServer->disconnect(pServer->getConnId());
-      adv_restart_time = millis() + ADVERT_RESTART_DELAY;
-    }
+    pServer->disconnect(pServer->getConnId());
+    adv_restart_time = millis() + ADVERT_RESTART_DELAY;
   }
 }
 
@@ -246,52 +262,106 @@ void SerialBLEInterface::clearBuffers()
 void SerialBLEInterface::enable()
 {
   if (_isEnabled) return;
-#if defined(HELTEC_V4_BLE_FULL_SHUTDOWN) && HELTEC_V4_BLE_FULL_SHUTDOWN
-  // Arduino-ESP32 2.x retains stale BLE server singletons after deinit(false).
-  // A clean reboot is the reliable way to reconstruct the stack, while all
-  // identity and settings remain preserved in flash.
-  if (stack_deinitialized) {
-    delay(20);
-    esp_restart();
-    return;
-  }
-#endif
+  if (!resumeController()) return;
   _isEnabled = true;
   disconnected_since = millis();
   clearBuffers();
-  pService->start();
+  if (!service_created) {
+    pService->start();
+    service_created = true;
+  } else {
+    // Reuse the registered attributes rather than adding them on every toggle.
+    power_error = esp_ble_gatts_start_service(pService->getHandle());
+    if (power_error != ESP_OK) {
+      _isEnabled = false;
+      return;
+    }
+  }
   startAdvertising(true);
 }
 
 void SerialBLEInterface::disable()
 {
+  if (!_isEnabled) return;
   _isEnabled = false;
   BLE_DEBUG_PRINTLN("SerialBLEInterface::disable");
-  if (pServer != NULL) {
-    pServer->getAdvertising()->stop();
-    if (pServer->getConnectedCount() > 0) {
-      pServer->disconnect(last_conn_id);
-      delay(50);
-    }
-  }
-  if (pService != NULL) pService->stop();
-  clearBuffers();
+  pServer->getAdvertising()->stop();
+  if (pServer->getConnectedCount() > 0) pServer->disconnect(last_conn_id);
+#if !defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) || !HELTEC_V4_COMPANION_LIGHT_SLEEP
+  pService->stop();
+#endif
   oldDeviceConnected = deviceConnected = false;
   peer_address_valid = false;
   connection_profile_known = false;
   disconnected_since = 0;
-  advertising_fast = false;
   adv_restart_time = fast_adv_until = 0;
+  // A live peer disconnects asynchronously; the loop retries after its callback.
+  suspendController();
+}
 
-#if defined(HELTEC_V4_BLE_FULL_SHUTDOWN) && HELTEC_V4_BLE_FULL_SHUTDOWN
-  // Stopping advertisements and the GATT service leaves Bluedroid and the BLE
-  // controller powered. Deinitializing both is the material battery fix.
-  BLEDevice::deinit(false);
-  pServer = NULL;
-  pService = NULL;
-  pTxCharacteristic = NULL;
-  stack_deinitialized = true;
+void SerialBLEInterface::suspendController()
+{
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  if (controller_suspended || _isEnabled || pServer->getConnectedCount() != 0) return;
+  // Bluedroid discards its GATT database on disable. Unregister and release
+  // our wrappers now, so repeated suspend/resume cycles do not leak them.
+  if (pService != nullptr) {
+    service_deleted = false;
+    pServer->removeService(pService);
+    const uint32_t deadline = millis() + 2000;
+    while (!service_deleted && static_cast<int32_t>(millis() - deadline) < 0) delay(1);
+    if (!service_deleted) { power_error = ESP_ERR_TIMEOUT; return; }
+    delete pNotifyDescriptor;
+    delete pRxCharacteristic;
+    delete pTxCharacteristic;
+    delete pService;
+    pNotifyDescriptor = nullptr;
+    pRxCharacteristic = pTxCharacteristic = nullptr;
+    pService = nullptr;
+    service_created = false;
+    gatt_rebuild_needed = true;
+  }
+  if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_ENABLED) {
+    power_error = esp_bluedroid_disable();
+    if (power_error != ESP_OK) return;
+  }
+  if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
+    power_error = esp_bt_controller_disable();
+    if (power_error != ESP_OK) return;
+  }
+  controller_suspended = esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_ENABLED;
 #endif
+}
+
+bool SerialBLEInterface::resumeController()
+{
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  if (!controller_suspended && !gatt_rebuild_needed) return true;
+  if (esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_ENABLED) {
+    power_error = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+    if (power_error != ESP_OK) return false;
+  }
+  if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
+    power_error = esp_bluedroid_enable();
+    if (power_error != ESP_OK) return false;
+  }
+  // Re-register the application and rebuild its encrypted GATT attributes.
+  app_registered = false;
+  power_error = esp_ble_gatts_app_register(pServer->m_appId);
+  if (power_error != ESP_OK) return false;
+  const uint32_t deadline = millis() + 2000;
+  while (!app_registered && static_cast<int32_t>(millis() - deadline) < 0) delay(1);
+  if (!app_registered) { power_error = ESP_ERR_TIMEOUT; return false; }
+  esp_ble_gap_set_device_name(saved_device_name);
+  BLEDevice::setMTU(MAX_FRAME_SIZE);
+  BLESecurity sec;
+  sec.setStaticPIN(_pin_code);
+  sec.setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+  createService();
+  gatt_rebuild_needed = false;
+  controller_suspended = false;
+#endif
+  return true;
 }
 
 size_t SerialBLEInterface::writeFrame(const uint8_t src[], size_t len)
@@ -323,10 +393,6 @@ bool SerialBLEInterface::isWriteBusy() const
 
 size_t SerialBLEInterface::checkRecvFrame(uint8_t dest[])
 {
-  // The interface manager continues polling after BLE has been powered down.
-  // Avoid touching stale GATT pointers until the user requests a clean reboot.
-  if (stack_deinitialized) return 0;
-
   if (send_queue_len > 0 && millis() >= _last_write + BLE_WRITE_MIN_INTERVAL) {
     _last_write = millis();
     pTxCharacteristic->setValue(send_queue[0].buf, send_queue[0].len);

@@ -56,17 +56,39 @@ The retained targets share these hardware-focused changes where applicable:
 - Persistent OLED shutdown, physical VEXT control, automatic-wake suppression, and restoration by holding PRG.
 - GPS disabled without powering, resetting, probing, or delaying boot; its UART is stopped while disabled and restarted when enabled.
 - TX/status LED suppression for unattended operation.
-- Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware ceiling that keeps estimated output at or below 22 dBm.
+- Automatic GC1109/KCT8103L detection, KCT8103L LNA enabled by default, and a FEM-aware estimated output ceiling of 28 dBm for high-power BLE and 22 dBm for other roles.
 - Maximum physical TX is locked across every Heltec V4 role; lower saved values or client commands cannot reduce it.
 - Temporary-file, backup, and rename-based persistence for identity and configuration stores, with a write guard during critical battery recovery.
 - Fast noise-floor calibration during the first minute followed by a lower-overhead thirty-second maintenance cadence.
 - Less frequent new-install advertisements: thirty minutes for Solar Repeater and sixteen minutes for Room Server and Sensor.
 
-### Transmit power
+### High-power BLE Companion sleep and transmit policy
+
+`heltec_v4_companion_radio_ble` now targets the amplified high-power Heltec V4.
+It forces the nominal maximum output of 28 dBm using the detected FEM gain table
+(21 dBm SX1262 input on KCT8103L). Lower saved or app-requested TX settings do not
+reduce this target's output. Other firmware roles retain their 22 dBm estimated
+ceiling. These are firmware table estimates, not measured antenna output.
+
+After five disconnected minutes, BLE releases its GATT objects and suspends both
+the host and controller. PRG can enable it again without rebooting or discarding
+queued LoRa messages. The processor can then enter light sleep in windows of at
+most 20 ms while the SX1262 and FEM stay in continuous RX. DIO1 and PRG wake it;
+a timer services background tasks. Pending transmissions, Wi-Fi, GPS, the lit
+OLED, buzzer activity and an attached computer's USB connection prevent sleep.
+The RX boost and LNA settings are preserved.
+
+Local diagnostic commands are `get power.sleep`, `get power.runtime`,
+`set power.sleep on`, `set power.sleep off`, `set bluetooth on`, and
+`set bluetooth off`. Changes to these runtime controls are not persisted.
+USB sleep override and synthetic IRQ diagnostics are compiled only into the
+local test build, never the normal firmware target.
+
+### Transmit power in other roles
 
 The MeshCore `tx` setting historically represents requested **SX1262 input power**, not antenna output. In this fork, every Heltec V4 target now forces that request to the maximum before the board-specific FEM mapping.
 
-The physical transmit path therefore stays at the existing FEM-aware estimated **22 dBm antenna-path ceiling** at all times:
+In the other roles, the physical transmit path stays at the existing FEM-aware estimated **22 dBm antenna-path ceiling** at all times:
 
 - V4.2 / GC1109 applies 11 dBm at the SX1262 input.
 - V4.3 / KCT8103L applies 9 dBm at the SX1262 input.
@@ -79,13 +101,13 @@ This is a firmware estimate, not an RF certification result. Measure conducted o
 
 The CPU remains at the established fixed 80 MHz. The pinned Arduino-ESP32 framework was built without ESP-IDF dynamic frequency scaling, framework-managed automatic light sleep, Bluetooth controller modem sleep, or disconnected-station ESP-NOW power management. Application flags cannot enable those precompiled features after the fact.
 
-The retained targets use cooperative idle, BLE advertising/connection scheduling, Wi-Fi modem power saving and reconnect backoff. The BLE Companion additionally uses explicit ESP32-S3 light sleep only after Bluedroid and the Bluetooth controller have been fully deinitialized. The SX1262 remains in continuous receive and wakes the MCU through DIO1; PRG and a one-second maintenance timer are also wake sources.
+The retained targets use cooperative idle, BLE advertising/connection scheduling, Wi-Fi modem power saving and reconnect backoff. The BLE Companion additionally uses explicit ESP32-S3 light sleep only after Bluedroid and the Bluetooth controller have been disabled. The SX1262 remains in continuous receive and wakes the MCU through DIO1; PRG and a bounded 20 ms maintenance timer are also wake sources.
 
 ### Standard profile
 
 Standard Companion, Room Server, Sensor, Bridge, Terminal and KISS targets retain the continuous availability appropriate to their role. They receive the common ADC, OLED, GPS, LED, radio, storage and idle improvements.
 
-After five minutes without a BLE connection, the Companion fully deinitializes Bluedroid and the ESP32-S3 Bluetooth controller. It then light-sleeps whenever the mesh is idle while preserving continuous LoRa reception. To restore Bluetooth, open the node's Bluetooth page and hold PRG; the node performs a clean reboot while preserving identity, contacts, channels and saved settings. Active BLE connections are never stopped by the timer.
+After five minutes without a BLE connection, the Companion unregisters/frees its GATT attributes and disables Bluedroid and the ESP32-S3 Bluetooth controller. It then light-sleeps whenever the mesh is idle while preserving continuous LoRa reception. To restore Bluetooth, open the node's Bluetooth page and hold PRG; the node rebuilds its encrypted GATT service without rebooting, preserving identity, contacts, channels, queued messages and saved settings. Active BLE connections are never stopped by the timer.
 
 BLE Companion builds also support optional Wi-Fi configured through the Companion CLI. Wi-Fi stays off without credentials; saved network changes apply after reboot. See the connectivity and telemetry integration section in `docs/HELTEC_V4_ENERGY_OPTIMIZATION.md`.
 

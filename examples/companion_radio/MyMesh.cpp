@@ -5,6 +5,17 @@
 #include <WiFi.h>
 #endif
 #include <Mesh.h>
+#ifdef HELTEC_V4_ALLOW_USB_SLEEP_TEST
+// RAM-only collector: avoid USB writes while its peripheral is asleep. Only
+// explicitly armed, marked test packets are consumed; normal traffic is intact.
+static bool rx_test_active = false;
+static uint32_t rx_test_run = 0, rx_test_duplicates = 0;
+static uint64_t rx_test_bits = 0;
+static int rx_test_rssi_min = 127, rx_test_rssi_max = -127;
+#endif
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+extern bool handleCompanionPowerCommand(const char* command, char* reply);
+#endif
 
 #define CMD_APP_START                 1
 #define CMD_SEND_TXT_MSG              2
@@ -831,6 +842,24 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
 }
 
 void MyMesh::onRawDataRecv(mesh::Packet *packet) {
+#ifdef HELTEC_V4_ALLOW_USB_SLEEP_TEST
+  if (rx_test_active && packet->payload_len == 14 &&
+      memcmp(packet->payload, "MCRXTEST", 8) == 0) {
+    uint32_t run;
+    uint16_t sequence;
+    memcpy(&run, packet->payload + 8, sizeof(run));
+    memcpy(&sequence, packet->payload + 12, sizeof(sequence));
+    if (run == rx_test_run && sequence < 64) {
+      uint64_t bit = uint64_t(1) << sequence;
+      if (rx_test_bits & bit) rx_test_duplicates++;
+      rx_test_bits |= bit;
+      int rssi = _radio->getLastRSSI();
+      if (rssi < rx_test_rssi_min) rx_test_rssi_min = rssi;
+      if (rssi > rx_test_rssi_max) rx_test_rssi_max = rssi;
+      return;
+    }
+  }
+#endif
   if (packet->payload_len + 4 > sizeof(out_frame)) {
     MESH_DEBUG_PRINTLN("onRawDataRecv(), payload_len too long: %d", packet->payload_len);
     return;
@@ -992,6 +1021,9 @@ void MyMesh::begin() {
   _prefs.sf = constrain(_prefs.sf, 5, 12);
   _prefs.cr = constrain(_prefs.cr, 5, 8);
   _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  _prefs.tx_power_dbm = MAX_LORA_TX_POWER;
+#endif
   _prefs.gps_enabled = constrain(_prefs.gps_enabled, 0, 1);  // Ensure boolean 0 or 1
   _prefs.gps_interval = constrain(_prefs.gps_interval, 0, 86400);  // Max 24 hours
 
@@ -1458,9 +1490,13 @@ void MyMesh::handleCmdFrame(size_t len) {
                          (uint32_t)cr);
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     }
-  } else if (cmd_frame[0] == CMD_SET_RADIO_TX_POWER) {
+  } else if (cmd_frame[0] == CMD_SET_RADIO_TX_POWER && len >= 2) {
     int8_t power = (int8_t)cmd_frame[1];
-    if (power < -9 || power > MAX_LORA_TX_POWER) {
+    if (power < -9 || power > MAX_LORA_TX_POWER
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+        || power != MAX_LORA_TX_POWER
+#endif
+        ) {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     } else {
       _prefs.tx_power_dbm = power;
@@ -2078,7 +2114,37 @@ void MyMesh::enterCLIRescue() {
 }
 
 bool MyMesh::handleCommand(const char* command, uint32_t sender_timestamp, char* reply) {
+#ifdef HELTEC_V4_ALLOW_USB_SLEEP_TEST
+  if (sender_timestamp == 0) {
+    unsigned long run;
+    if (sscanf(command, "set power.rxtest %lx", &run) == 1) {
+      rx_test_run = run;
+      rx_test_bits = 0;
+      rx_test_duplicates = 0;
+      rx_test_rssi_min = 127;
+      rx_test_rssi_max = -127;
+      rx_test_active = true;
+      strcpy(reply, "OK");
+      return true;
+    } else if (strcmp(command, "get power.rxtest") == 0) {
+      sprintf(reply, "> run:%08lx,bits:%08lx%08lx,duplicates:%lu,rssi-min:%d,rssi-max:%d",
+              static_cast<unsigned long>(rx_test_run),
+              static_cast<unsigned long>(rx_test_bits >> 32),
+              static_cast<unsigned long>(rx_test_bits),
+              static_cast<unsigned long>(rx_test_duplicates), rx_test_rssi_min, rx_test_rssi_max);
+      return true;
+    } else if (strcmp(command, "set power.rxtest stop") == 0) {
+      rx_test_active = false;
+      strcpy(reply, "OK");
+      return true;
+    }
+  }
+#endif
   while (*command == ' ') command++; // skip leading spaces
+
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  if (sender_timestamp == 0 && handleCompanionPowerCommand(command, reply)) return true;
+#endif
 
   if (strlen(command) > 4 && command[2] == '|') { // optional prefix (for companion radio CLI)
     memcpy(reply, command, 3);                    // reflect the prefix back

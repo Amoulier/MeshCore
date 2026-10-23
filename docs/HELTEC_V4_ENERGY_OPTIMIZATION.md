@@ -4,7 +4,7 @@ This generation reduces unnecessary board, display, sensor and connectivity
 activity while keeping LoRa transmission at the maximum permitted by this
 fork's FEM-aware output policy.
 
-## RF policy
+## RF policy in other roles
 
 - Every retained Heltec V4 target requests `MAX_LORA_TX_POWER` before the
   board-specific FEM mapping.
@@ -81,16 +81,16 @@ Bluetooth stack has been fully shut down.
 - Changes to a slower advertising interval after that minute.
 - Requests short connection intervals while data is active.
 - Requests longer intervals and slave latency after ten seconds without data.
-- After five minutes without a connection, fully deinitializes Bluedroid and
+- After five minutes without a connection, unregisters/frees GATT attributes and disables Bluedroid and
   the ESP32-S3 Bluetooth controller. Connected sessions are never stopped by
   this timer.
 - While Bluetooth is fully down and the mesh has no pending work, enters
   explicit light sleep.
 - The SX1262 remains in continuous receive; LoRa DIO1 wakes the MCU immediately.
-- PRG and a one-second maintenance timer are also configured as wake sources.
+- PRG and a bounded 20 ms maintenance timer are also configured as wake sources.
 - Restoring Bluetooth from the node's Bluetooth page with a long PRG press
-  performs a clean reboot. Identity, contacts, channels and persistent settings
-  remain intact.
+  rebuilds encrypted GATT without rebooting. Identity, contacts, channels, queued
+  messages and persistent settings remain intact.
 - The maximum TX policy is unchanged before, during and after the BLE-off state.
 
 ### Standard Wi-Fi Companion
@@ -181,3 +181,44 @@ Hardware qualification still requires:
 - Sensor sample, transmit and subscription-expiry tests.
 - A complete Solar Repeater 3.50 V / 3.65 V recovery cycle.
 - A full battery-runtime comparison under controlled traffic and radio settings.
+
+## High-power BLE Companion: explicit MCU light sleep
+
+The BLE target forces maximum nominal 28 dBm output with a FEM-aware SX1262
+input clamp. Existing lower saved/app TX settings are overridden in this target;
+the RX profile is preserved. All other roles retain their existing TX policy.
+
+Bluetooth shutdown now unregisters and frees the encrypted GATT service and
+characteristics, disables Bluedroid, and disables the Bluetooth controller.
+Reactivation re-registers the application, PIN/security settings and GATT service.
+It preserves bonds, the node identity, application queues and persistent settings.
+
+The companion sleeps only with the radio in RX, no queued outgoing work, Bluetooth
+suspended, Wi-Fi disabled, GPS disabled, OLED off and buzzer quiet. Manual sleep
+is inhibited when the USB Serial/JTAG peripheral is connected to a computer,
+including a two-second disconnect/enumeration grace period. Radio DIO1 is a
+high-level wake source and PRG is a low-level source. A timer bounds sleep to
+20 ms. The SX1262 and FEM remain powered and are not duty-cycled. IRQ setup masks
+the RadioLib interrupt, restores its rising edge afterward and polls the latched
+DIO1 level to recover arrivals during that interval. The loop still yields to
+FreeRTOS after sleep. Diagnostic counters distinguish successful sleeps, timer
+and GPIO wakes, cumulative sleep time and the last error.
+
+Physical qualification must distinguish MCU/timer/DIO1 and GATT tests from a
+controlled over-air packet-loss test. A second MeshCore radio can send numbered
+zero-hop raw packets without changing contacts or flooding other nodes. The
+local diagnostic build adds a RAM-only 64-sequence collector and a two-minute
+USB sleep override under `HELTEC_V4_ALLOW_USB_SLEEP_TEST`. Only armed packets
+with the matching `MCRXTEST` marker and run ID are consumed by the collector,
+avoiding USB writes while that peripheral sleeps. Normal traffic keeps its
+usual handling. The override restores USB automatically at the end of the
+window. These commands and the collector are excluded from normal firmware.
+
+The local test commands are `set power.rxtest <hex-run-id>`,
+`get power.rxtest`, `set power.rxtest stop`, and `set power.sleep rxtest`.
+The 14-byte payload consists of the eight-byte marker, a little-endian 32-bit
+run ID and a little-endian 16-bit sequence (0–63). Read the sequence bitmap and
+sleep counters after USB recovers; compare unique receives with completed
+transmissions, rather than commands accepted into the sender's queue.
+
+Actual current, runtime and conducted RF output require external measurement.

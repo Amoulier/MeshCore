@@ -51,9 +51,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq 'BLEDevice::deinit(false)' src/helpers/esp32/SerialBLEInterface.cpp
-          grep -Fq 'isFullyPoweredDown()' src/helpers/esp32/SerialBLEInterface.h
-          grep -Fq 'board.sleep(1)' examples/companion_radio/main.cpp
+          grep -Fq 'esp_bluedroid_disable()' src/helpers/esp32/SerialBLEInterface.cpp
+          grep -Fq 'esp_bt_controller_disable()' src/helpers/esp32/SerialBLEInterface.cpp
+          grep -Fq 'isControllerSuspended()' src/helpers/esp32/SerialBLEInterface.h
+          grep -Fq 'board.sleepWhileReceiving(20)' examples/companion_radio/main.cpp
+          grep -Fq 'radio_driver.pollLatchedReceiveIRQ()' examples/companion_radio/main.cpp
+          grep -Fq 'HWCDC::isPlugged()' examples/companion_radio/main.cpp
           grep -Fq 'buttonWakeupPin' src/helpers/ESP32Board.h
           grep -Fq -- '-D LORA_TX_POWER=22' variants/heltec_v4/platformio.ini
           grep -Fq -- '-D HELTEC_V4_FORCE_MAX_TX=1' variants/heltec_v4/platformio.ini
@@ -73,7 +76,7 @@ jobs:
 
           short_sha="$(git rev-parse --short=8 HEAD)"
           build_date="$(date -u '+%d-%b-%Y')"
-          firmware_version="${RELEASE_TAG}-${short_sha}"
+          firmware_version="${RELEASE_TAG#heltec-v4-energy-}-${short_sha}"
           export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS:-} -DFIRMWARE_BUILD_DATE='\"${build_date}\"' -DFIRMWARE_VERSION='\"${firmware_version}\"'"
 
           pio run -e "${TARGET}"
@@ -163,11 +166,14 @@ jobs:
           After five disconnected minutes, Companion BLE fully powers down the
           ESP32-S3 Bluetooth stack and light-sleeps while the SX1262 remains in
           continuous receive. Use the Bluetooth page and a long PRG press to
-          reboot cleanly and restore BLE.
+          rebuild the encrypted GATT service and restore BLE without rebooting.
+          Computer USB, active BLE/Wi-Fi/GPS, OLED, buzzer or pending mesh work
+          inhibit MCU sleep. Test-only USB sleep overrides are not included.
 
-          Every role keeps TX locked to the FEM-aware maximum estimated 22 dBm
-          antenna-path ceiling. GC1109 uses 11 dBm SX1262 input; KCT8103L uses
-          9 dBm SX1262 input.
+          High-power Companion BLE targets nominal 28 dBm using the detected
+          FEM table (21 dBm SX1262 input on KCT8103L). Other roles retain their
+          estimated 22 dBm ceiling: 11 dBm SX1262 input on GC1109 or 9 dBm on
+          KCT8103L. These are table estimates, not measured RF output.
           EOF
 
           archive="MeshCore-Heltec-V4-all-variants-${RELEASE_TAG}.zip"
@@ -197,17 +203,18 @@ jobs:
             ## Battery-runtime hotfix
 
             The BLE Companion no longer only stops advertisements when its
-            five-minute disconnected timer expires. It fully deinitializes
+            five-minute disconnected timer expires. It unregisters/frees GATT attributes and disables
             Bluedroid and the ESP32-S3 Bluetooth controller, then enters explicit
             light sleep whenever the mesh is idle. The SX1262 remains in
             continuous receive and wakes the MCU through DIO1; PRG and a
-            one-second maintenance timer are also wake sources. Restoring BLE
-            from the Bluetooth page performs a clean reboot and preserves the
-            node identity, contacts, channels and saved settings.
+            bounded 20 ms maintenance timer are also wake sources. Restoring BLE
+            from the Bluetooth page rebuilds GATT without rebooting and preserves
+            node identity, contacts, channels, queued messages and saved settings.
 
             ## Maximum transmit policy
 
-            All Heltec V4 variants keep transmission at the maximum permitted by
+            High-power BLE targets nominal 28 dBm with 21 dBm SX1262 input.
+            Other Heltec V4 variants keep transmission at the maximum permitted by
             the fork's existing FEM-aware estimated 22 dBm antenna-path ceiling.
             GC1109 hardware applies 11 dBm to the SX1262 and KCT8103L hardware
             applies 9 dBm. Lower saved values or client commands cannot reduce
@@ -216,7 +223,7 @@ jobs:
             ## Firmware variants
 
             ### Companion
-            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; after five disconnected minutes it fully powers Bluetooth down and light-sleeps while preserving LoRa RX. PRG restores BLE through a clean reboot.
+            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; after five disconnected minutes it fully powers Bluetooth down and light-sleeps while preserving LoRa RX. PRG restores BLE without rebooting; high-power BLE targets nominal 28 dBm.
             - `heltec_v4_companion_radio_usb` - Companion for a computer or host connected through USB serial.
             - `heltec_v4_companion_radio_wifi` - Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
 
@@ -238,6 +245,14 @@ jobs:
             The release build verifies the BLE-off implementation, PRG/DIO1/timer
             wake paths, maximum-TX flags, all ten firmware targets, both binary
             image formats and ESP image headers.
+
+            Physical V4.3/KCT8103L validation received all 168 numbered over-air
+            test packets: 96 with MCU sleep enabled, 48 in awake baselines and
+            24 from the Heltec to an official-firmware XIAO. The two sleep windows
+            accumulated 226.928 seconds asleep with zero sleep/RX/core errors.
+            No TX reduction was made. Five BLE suspend/resume cycles and PRG
+            display restoration also passed. This close-range sample does not
+            establish range or guaranteed absence of loss in other conditions.
 
             Physical qualification remains incomplete: current draw, conducted RF
             power, sensitivity, authenticated messaging, Wi-Fi/ESP-NOW operation,

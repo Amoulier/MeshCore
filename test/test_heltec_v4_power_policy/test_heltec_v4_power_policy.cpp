@@ -96,6 +96,17 @@ TEST(HeltecV4RadioPower, CapsLegacyRadioInputByDetectedFem)
   EXPECT_EQ(22, kct8103lEstimatedOutput(clampKct8103lRadioInput(11, 22)));
 }
 
+TEST(HeltecV4RadioPower, HighPowerUsesHighestInputWithinNominal28DbmLimit)
+{
+  EXPECT_EQ(21, clampGc1109RadioInput(22, 28));
+  EXPECT_EQ(21, clampKct8103lRadioInput(22, 28));
+  EXPECT_EQ(28, gc1109EstimatedOutput(21));
+  EXPECT_EQ(28, kct8103lEstimatedOutput(21));
+  // Driving the SX1262 to its own maximum would overshoot the board target.
+  EXPECT_GT(gc1109EstimatedOutput(22), 28);
+  EXPECT_GT(kct8103lEstimatedOutput(22), 28);
+}
+
 int main(int argc, char **argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

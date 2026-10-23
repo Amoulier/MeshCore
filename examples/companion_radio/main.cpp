@@ -119,6 +119,64 @@ void halt() {
   unsigned long wifi_reconnect_delay_ms = 10000;
 #endif
 
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+#include <esp_bt.h>
+#include <esp_bt_main.h>
+static bool companion_sleep_enabled = true;
+static uint32_t last_usb_host_seen = 0;
+#ifdef HELTEC_V4_ALLOW_USB_SLEEP_TEST
+extern RADIO_CLASS radio;
+static uint32_t usb_sleep_test_until = 0;
+static bool radio_wake_test_armed = false;
+static int radio_wake_test_error = 0;
+static uint32_t radio_wake_test_flags = 0;
+#endif
+
+// Local diagnostics and recovery only; these commands never write preferences.
+bool handleCompanionPowerCommand(const char* command, char* reply) {
+  if (strcmp(command, "get power.runtime") == 0) {
+    sprintf(reply, "> bt:%d,suspended:%d,controller:%d,host:%d,bt-error:%d,sleep:%d,heap:%u",
+            bluetooth_interface.isEnabled(), bluetooth_interface.isControllerSuspended(),
+            esp_bt_controller_get_status(), esp_bluedroid_get_status(), bluetooth_interface.getPowerError(),
+            companion_sleep_enabled, ESP.getFreeHeap());
+  } else if (strcmp(command, "set bluetooth on") == 0) {
+    bluetooth_interface.enable();
+    strcpy(reply, bluetooth_interface.isEnabled() ? "OK" : "Error: Bluetooth resume failed");
+  } else if (strcmp(command, "set bluetooth off") == 0) {
+    bluetooth_interface.disable();
+    strcpy(reply, "OK");
+  } else if (strcmp(command, "set power.sleep on") == 0) {
+    companion_sleep_enabled = true;
+    strcpy(reply, "OK");
+  } else if (strcmp(command, "set power.sleep off") == 0) {
+    companion_sleep_enabled = false;
+    strcpy(reply, "OK");
+#ifdef HELTEC_V4_ALLOW_USB_SLEEP_TEST
+  } else if (strcmp(command, "get power.irqtest") == 0) {
+    sprintf(reply, "> error:%d,irq-flags:%lu", radio_wake_test_error, static_cast<unsigned long>(radio_wake_test_flags));
+  } else if (strcmp(command, "set power.sleep test") == 0) {
+    companion_sleep_enabled = true;
+    usb_sleep_test_until = millis() + 10000;
+    strcpy(reply, "OK - ten-second USB sleep test; USB may temporarily disconnect");
+  } else if (strcmp(command, "set power.sleep irqtest") == 0) {
+    companion_sleep_enabled = true;
+    usb_sleep_test_until = millis() + 10000;
+    radio_wake_test_armed = true;
+    strcpy(reply, "OK - test-only SX1262 timeout IRQ wakeup");
+  } else if (strcmp(command, "set power.sleep buttontest") == 0) {
+    companion_sleep_enabled = true;
+    usb_sleep_test_until = millis() + 60000;
+    strcpy(reply, "OK - sixty-second PRG wakeup test");
+  } else if (strcmp(command, "set power.sleep rxtest") == 0) {
+    companion_sleep_enabled = true;
+    usb_sleep_test_until = millis() + 120000;
+    strcpy(reply, "OK - two-minute radio receive test; USB recovers automatically");
+#endif
+  } else return false;
+  return true;
+}
+#endif
+
 void setup() {
   board.begin();
   Serial.begin(115200);
@@ -326,22 +384,57 @@ void loop() {
   }
 #endif
 
-#if defined(ESP32) && defined(BLE_PIN_CODE)
-  // Once the five-minute BLE timeout fully powers down Bluedroid and the
-  // controller, keep the CPU in light sleep whenever the mesh is idle. The
-  // SX1262 remains in continuous RX and wakes immediately through DIO1. PRG
-  // and a one-second timer also wake the MCU. If Wi-Fi has been configured,
-  // it remains authoritative and generic sleep stays inhibited.
-  bool can_sleep_after_ble_shutdown =
-      bluetooth_interface.isFullyPoweredDown() && !the_mesh.hasPendingWork();
-#ifdef ENABLE_WIFI_INTERFACE
-  can_sleep_after_ble_shutdown = can_sleep_after_ble_shutdown && !wifi_enabled;
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  bool usb_host_active = false;
+#if ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
+  if (HWCDC::isPlugged()) last_usb_host_seen = millis();
+  // Manual light sleep stops the integrated USB Serial/JTAG peripheral. Keep
+  // the computer connection, and give enumeration a two-second grace period.
+  usb_host_active = HWCDC::isPlugged() || static_cast<uint32_t>(millis() - last_usb_host_seen) < 2000;
 #endif
-  if (can_sleep_after_ble_shutdown) {
-    board.sleep(1);
-    return;
+#ifdef HELTEC_V4_ALLOW_USB_SLEEP_TEST
+  if (usb_sleep_test_until) {
+    if (static_cast<int32_t>(millis() - usb_sleep_test_until) >= 0) {
+      usb_sleep_test_until = 0;
+      companion_sleep_enabled = false;
+      // Test-only: reconnect the USB peripheral after its deliberate loss.
+      Serial.end();
+      delay(30);
+      Serial.begin(115200);
+    } else usb_host_active = false;
   }
 #endif
-
+  if (companion_sleep_enabled && !usb_host_active && !the_mesh.hasPendingWork() && radio_driver.isInRecvMode() &&
+      bluetooth_interface.isControllerSuspended() && !the_mesh.getNodePrefs()->gps_enabled
+#ifdef ENABLE_WIFI_INTERFACE
+      && !wifi_enabled
+#endif
+#ifdef DISPLAY_CLASS
+      && !ui_task.isDisplayOn() && ui_task.isBuzzerQuiet()
+#endif
+      ) {
+#ifdef HELTEC_V4_ALLOW_USB_SLEEP_TEST
+    const bool running_irq_test = radio_wake_test_armed;
+    if (radio_wake_test_armed) {
+      radio_wake_test_armed = false;
+      // Generate a hardware DIO1 event ten milliseconds into MCU sleep.
+      // Normal recvRaw() restarts continuous RX immediately afterward. This
+      // diagnostic is excluded from the installed production build.
+      radio_wake_test_error = radio.standby();
+      if (radio_wake_test_error == RADIOLIB_ERR_NONE) radio_wake_test_error = radio.clearIrqStatus(RADIOLIB_SX126X_IRQ_ALL);
+      if (radio_wake_test_error == RADIOLIB_ERR_NONE) radio_wake_test_error = radio.setDioIrqParams(RADIOLIB_SX126X_IRQ_RX_DONE | RADIOLIB_SX126X_IRQ_TIMEOUT,
+                            RADIOLIB_SX126X_IRQ_RX_DONE | RADIOLIB_SX126X_IRQ_TIMEOUT);
+      if (radio_wake_test_error == RADIOLIB_ERR_NONE) radio_wake_test_error = radio.setRx(640); // SX1262 timer steps are 15.625 us.
+    }
+#endif
+    board.sleepWhileReceiving(20);
+#ifdef HELTEC_V4_ALLOW_USB_SLEEP_TEST
+    if (running_irq_test) radio_wake_test_flags = radio.getIrqFlags();
+#endif
+    radio_driver.pollLatchedReceiveIRQ();
+    // Yield below even after a successful sleep, so the FreeRTOS idle tasks
+    // and watchdog servicing are not starved by repeated manual sleeps.
+  }
+#endif
   board.idle();
 }

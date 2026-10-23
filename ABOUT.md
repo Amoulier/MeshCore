@@ -52,11 +52,11 @@ The maintained firmware adds or strengthens:
 - Automatic GC1109/KCT8103L detection, KCT8103L receive-gain control and FEM-aware transmit limits.
 - Full Bluetooth-host/controller shutdown after five disconnected minutes, followed by explicit ESP32-S3 light sleep while LoRa remains in continuous receive.
 - DIO1, PRG and maintenance-timer wake paths for the BLE-off Companion state.
-- Maximum physical TX locked across every Heltec V4 role at the existing estimated 22 dBm antenna-path ceiling.
+- Maximum physical TX locked across every Heltec V4 role at nominal 28 dBm for the high-power BLE Companion and the existing estimated 22 dBm ceiling in other roles.
 - Safer identity and configuration persistence using temporary files, verified recovery copies and write blocking during critical battery recovery.
 - Reproducible CI builds, host tests and Heltec V4-only scope checks.
 
-The normal `tx` field remains present for MeshCore protocol compatibility, but this fork intentionally prevents a lower saved value or client command from reducing physical transmit power. The common maximum request is mapped safely by the detected front end: 11 dBm SX1262 input on GC1109 and 9 dBm on KCT8103L, each corresponding to the existing estimated 22 dBm antenna-path ceiling.
+The normal `tx` field remains present for MeshCore protocol compatibility, but this fork intentionally prevents a lower saved value or client command from reducing physical transmit power. The common maximum request is mapped by the detected front end. High-power BLE uses 21 dBm SX1262 input for nominal 28 dBm output; other roles retain 11 dBm on GC1109 and 9 dBm on KCT8103L for estimated 22 dBm output.
 
 ## Companion interface
 
@@ -71,13 +71,13 @@ LoRa remains active while the OLED is disabled. Incoming messages do not wake a 
 
 With the default OLED Companion configuration, the active six-digit Bluetooth PIN is generated at boot and displayed on the screen. The displayed PIN—not a presumed static code—must be used for first pairing.
 
-After five minutes without a BLE connection, the firmware fully deinitializes Bluedroid and the ESP32-S3 Bluetooth controller. The MCU then enters explicit light sleep whenever the mesh is idle, while the SX1262 continues receiving and wakes the processor through DIO1. To restore Bluetooth, use the Bluetooth page and hold PRG; the node performs a clean reboot while preserving identity, contacts, channels and saved settings.
+After five minutes without a BLE connection, the firmware disables Bluedroid and the ESP32-S3 Bluetooth controller after freeing GATT attributes. The MCU then enters explicit light sleep whenever the mesh is idle, while the SX1262 continues receiving and wakes the processor through DIO1. To restore Bluetooth, use the Bluetooth page and hold PRG; the node restores its encrypted GATT service without rebooting, preserving identity, contacts, channels, queued messages and saved settings.
 
 ## Validation and releases
 
 Every retained target is compiled by CI, and the repository runs native policy tests plus an automated audit that prevents unrelated board support from being reintroduced.
 
-Initial physical validation on a Heltec V4.3 Companion confirmed successful boot, Bluetooth pairing with the PIN shown on the OLED, on-device persistent display shutdown and restoration, and normal startup after removal from USB power. The later report of less than 24-hour runtime identified that stopping advertisements alone did not remove Bluetooth host/controller current; the current generation replaces that behavior with full BLE deinitialization and explicit BLE-off light sleep.
+Initial physical validation on a Heltec V4.3 Companion confirmed successful boot, Bluetooth pairing with the PIN shown on the OLED, on-device persistent display shutdown and restoration, and normal startup after removal from USB power. The later report of less than 24-hour runtime identified that stopping advertisements alone did not remove Bluetooth host/controller current; the current generation frees GATT attributes, suspends the Bluetooth host/controller and uses explicit BLE-off light sleep. GATT is rebuilt on wake without rebooting. A subsequent two-node test received all 96 packets sent with MCU sleep enabled, all 48 awake baseline packets and all 24 reverse-direction packets. See [the RF validation report](docs/HELTEC_V4_LIGHT_SLEEP_RF_VALIDATION.md) for conditions and limits.
 
 Physical qualification is still required for measured current draw, complete battery runtime, conducted RF output, sensitivity, prolonged reconnection, configuration persistence and full discharge behavior on the final hardware installation.
 
@@ -99,4 +99,4 @@ Original MeshCore authors and contributors retain attribution for upstream work.
 
 ## Energy optimization generation
 
-Ten targets are retained, with Solar Repeater replacing the official standard Repeater. They share role-specific peripheral builds, cached battery telemetry, cooperative ESP32 idle, BLE/Wi-Fi power saving and runtime RX profiles. Companion BLE fully powers down the Bluetooth stack after five disconnected minutes and uses explicit light sleep while LoRa remains available. Every target requests the FEM-aware maximum, retaining the existing estimated 22 dBm antenna-output ceiling.
+Ten targets are retained, with Solar Repeater replacing the official standard Repeater. They share role-specific peripheral builds, cached battery telemetry, cooperative ESP32 idle, BLE/Wi-Fi power saving and runtime RX profiles. Companion BLE fully powers down the Bluetooth stack after five disconnected minutes and uses explicit light sleep while LoRa remains available. Every target requests the FEM-aware maximum, using nominal 28 dBm in high-power BLE and the existing estimated 22 dBm ceiling in other roles.

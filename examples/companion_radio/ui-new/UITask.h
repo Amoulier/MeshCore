@@ -100,6 +100,7 @@ public:
   void showAlert(const char* text, int duration_millis);
   int  getMsgCount() const { return _msgcount; }
   bool hasDisplay() const { return _display != NULL; }
+  bool isDisplayOn() const { return _display != NULL && _display->isOn(); }
   bool isButtonPressed() const;
 
   bool isBuzzerQuiet() { 
