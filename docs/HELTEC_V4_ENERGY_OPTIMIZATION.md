@@ -205,5 +205,20 @@ FreeRTOS after sleep. Diagnostic counters distinguish successful sleeps, timer
 and GPIO wakes, cumulative sleep time and the last error.
 
 Physical qualification must distinguish MCU/timer/DIO1 and GATT tests from a
-controlled over-air packet-loss test. The latter requires a second radio. Actual
-current, runtime and conducted RF output also require external measurement.
+controlled over-air packet-loss test. A second MeshCore radio can send numbered
+zero-hop raw packets without changing contacts or flooding other nodes. The
+local diagnostic build adds a RAM-only 64-sequence collector and a two-minute
+USB sleep override under `HELTEC_V4_ALLOW_USB_SLEEP_TEST`. Only armed packets
+with the matching `MCRXTEST` marker and run ID are consumed by the collector,
+avoiding USB writes while that peripheral sleeps. Normal traffic keeps its
+usual handling. The override restores USB automatically at the end of the
+window. These commands and the collector are excluded from normal firmware.
+
+The local test commands are `set power.rxtest <hex-run-id>`,
+`get power.rxtest`, `set power.rxtest stop`, and `set power.sleep rxtest`.
+The 14-byte payload consists of the eight-byte marker, a little-endian 32-bit
+run ID and a little-endian 16-bit sequence (0–63). Read the sequence bitmap and
+sleep counters after USB recovers; compare unique receives with completed
+transmissions, rather than commands accepted into the sender's queue.
+
+Actual current, runtime and conducted RF output require external measurement.

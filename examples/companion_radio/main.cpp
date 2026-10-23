@@ -167,6 +167,10 @@ bool handleCompanionPowerCommand(const char* command, char* reply) {
     companion_sleep_enabled = true;
     usb_sleep_test_until = millis() + 60000;
     strcpy(reply, "OK - sixty-second PRG wakeup test");
+  } else if (strcmp(command, "set power.sleep rxtest") == 0) {
+    companion_sleep_enabled = true;
+    usb_sleep_test_until = millis() + 120000;
+    strcpy(reply, "OK - two-minute radio receive test; USB recovers automatically");
 #endif
   } else return false;
   return true;
