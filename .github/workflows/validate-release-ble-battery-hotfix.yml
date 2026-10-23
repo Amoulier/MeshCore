@@ -1,0 +1,119 @@
+name: Validate and Release BLE Battery Hotfix
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  validate-release:
+    if: github.event.issue.number == 13 && github.event.comment.body == '/validate-battery-hotfix'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NEXT_RELEASE: heltec-v4-energy-v1.1.1
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify merged hotfix and RF invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'BLEDevice::deinit(false)' src/helpers/esp32/SerialBLEInterface.cpp
+          grep -Fq 'isFullyPoweredDown()' src/helpers/esp32/SerialBLEInterface.h
+          grep -Fq 'board.sleep(1)' examples/companion_radio/main.cpp
+          grep -Fq 'buttonWakeupPin' src/helpers/ESP32Board.h
+          grep -Fq -- '-D LORA_TX_POWER=11' variants/heltec_v4/platformio.ini
+          grep -Fq -- '-D MAX_LORA_TX_POWER=22' variants/heltec_v4/platformio.ini
+          test "$(tr -d '[:space:]' < .github/release/heltec-v4-energy-version.txt)" = 'heltec-v4-energy-v1.1.0'
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Run native tests and build Companion BLE images
+        shell: bash
+        run: |
+          set -euo pipefail
+          pio test -e native
+          pio run -e heltec_v4_companion_radio_ble
+          pio run -e heltec_v4_companion_radio_ble -t mergebin
+          test -s .pio/build/heltec_v4_companion_radio_ble/firmware.bin
+          test -s .pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('.pio/build/heltec_v4_companion_radio_ble/firmware.bin').read_bytes()
+          merged = Path('.pio/build/heltec_v4_companion_radio_ble/firmware-merged.bin').read_bytes()
+          assert app[0] == 0xE9
+          assert merged[0] == 0xE9
+          assert len(merged) > 0x10000 and merged[0x10000] == 0xE9
+          PY
+
+      - name: Prepare permanent documentation and v1.1.1 release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'expected text not found in {path}: {old!r}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          replace_once(
+              'README.md',
+              '| `heltec_v4_companion_radio_ble` | BLE Companion with automatic Bluetooth shutdown after five disconnected minutes |',
+              '| `heltec_v4_companion_radio_ble` | BLE Companion that fully powers Bluetooth down after five disconnected minutes and light-sleeps while LoRa remains available |',
+          )
+          replace_once(
+              'README.md',
+              'Bluetooth turns off after five minutes without a connection; active connections are retained. To reconnect afterward, open the node\'s Bluetooth page and hold PRG to enable Bluetooth again. LoRa reception continues while Bluetooth is off.',
+              'After five minutes without a BLE connection, the Companion now fully deinitializes Bluedroid and the ESP32-S3 Bluetooth controller, then enters light sleep whenever the mesh is idle. The SX1262 remains in continuous receive and wakes the MCU immediately through DIO1; PRG and a one-second maintenance timer are also wake sources. To restore Bluetooth, open the Bluetooth page and hold PRG. The node performs a clean reboot because the pinned Arduino-ESP32 BLE library cannot safely reconstruct its retained GATT singletons in place. Identity, contacts, channels and saved settings remain preserved.',
+          )
+          replace_once(
+              'docs/HELTEC_V4_ENERGY_OPTIMIZATION.md',
+              '- Turns Bluetooth off after five minutes without a connection, matching the former\n  BLE low-power variant. Connected sessions are not shut down by this timer.\n- Restore Bluetooth from the node\'s Bluetooth page with a long PRG press; enabling\n  it starts a fresh five-minute window. LoRa continues while Bluetooth is off.',
+              '- After five minutes without a connection, fully deinitializes Bluedroid and\n  the ESP32-S3 Bluetooth controller; connected sessions are never stopped by\n  this timer.\n- While Bluetooth is fully down and the mesh is idle, enters explicit light\n  sleep with immediate LoRa DIO1 and PRG wake plus a one-second maintenance\n  timer. The SX1262 and FEM remain in receive, so LoRa availability and TX\n  power are unchanged.\n- Restoring Bluetooth from the node\'s Bluetooth page with a long PRG press\n  performs a clean reboot. Identity and persistent configuration are retained.',
+          )
+          replace_once(
+              '.github/workflows/heltec-v4-validation-release.yml',
+              '- `heltec_v4_companion_radio_ble` - Phone Companion over BLE; Bluetooth turns off after five disconnected minutes and can be restored locally with PRG.',
+              '- `heltec_v4_companion_radio_ble` - Phone Companion over BLE; after five disconnected minutes it fully powers down Bluetooth and light-sleeps while preserving LoRa RX. PRG restores BLE through a clean reboot.',
+          )
+          replace_once(
+              '.github/workflows/heltec-v4-validation-release.yml',
+              '            role-specific peripheral builds, and the existing FEM-aware estimated 22 dBm ceiling.\n\n            Validation:',
+              '            role-specific peripheral builds, and the existing FEM-aware estimated 22 dBm ceiling.\n\n            Battery hotfix v1.1.1: the BLE timeout now deinitializes Bluedroid and\n            the ESP32-S3 controller instead of only stopping advertisements, then\n            light-sleeps the MCU while preserving continuous LoRa RX, PRG wake and\n            the existing transmit-power/FEM policy.\n\n            Validation:',
+          )
+          replace_once(
+              '.github/workflows/heltec-v4-validation-release.yml',
+              '          Companion BLE uses the six-digit PIN shown on the OLED unless a\n          permanent PIN has been configured. The OLED can be disabled locally\n          from the node and restored with the PRG button.\n',
+              '          Companion BLE uses the six-digit PIN shown on the OLED unless a\n          permanent PIN has been configured. The OLED can be disabled locally\n          from the node and restored with the PRG button. After five disconnected\n          minutes, Bluetooth powers down completely and the MCU light-sleeps; use\n          the Bluetooth page and PRG to reboot cleanly and restore BLE.\n',
+          )
+
+          Path('.github/release/heltec-v4-energy-version.txt').write_text(
+              'heltec-v4-energy-v1.1.1\n', encoding='utf-8')
+          Path('.github/workflows/validate-release-ble-battery-hotfix.yml').unlink()
+          PY
+
+      - name: Commit documentation/version and dispatch all-variant release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name 'Amoulier'
+          git config user.email 'Amoulier@gmail.com'
+          git add -A
+          git commit -m 'release: Heltec V4 BLE battery hotfix v1.1.1'
+          git push origin HEAD:main
+          sleep 5
+          gh workflow run heltec-v4-validation-release.yml --repo "${GITHUB_REPOSITORY}" --ref main
