@@ -26,7 +26,7 @@ protected:
 public:
   void begin() {
     // for future use, sub-classes SHOULD call this from their begin()
-    startup_reason = BD_STARTUP_NORMAL;    
+    startup_reason = BD_STARTUP_NORMAL;
 
   #ifdef ESP32_CPU_FREQ
     setCpuFrequencyMhz(ESP32_CPU_FREQ);
@@ -49,7 +49,7 @@ public:
    #endif
   #else
     Wire.begin();
-  #endif    
+  #endif
   }
 
   void attachDynamicPrefs(KeyValueStore* prefs) { }  // no-op
@@ -74,42 +74,59 @@ public:
   }
 
   void sleep(uint32_t secs) override {
-    // Skip if not allow to sleep
+    // Skip if not allowed to sleep.
     if (inhibit_sleep) {
-      delay(1); // Give MCU to OTA to run
+      delay(1); // Give MCU and OTA work a chance to run.
       return;
     }
 
-    // Set GPIO wakeup
-    gpio_num_t wakeupPin = (gpio_num_t)getIRQGpio();    
+    const gpio_num_t loraWakeupPin = (gpio_num_t)getIRQGpio();
+#ifdef PIN_USER_BTN
+    const gpio_num_t buttonWakeupPin = (gpio_num_t)PIN_USER_BTN;
+#endif
 
-    // Configure timer wakeup
+    // Configure timer wakeup for scheduled jobs. Explicitly remove a stale
+    // timer source when callers request LoRa/button-only sleep.
     if (secs > 0) {
-      esp_sleep_enable_timer_wakeup(secs * 1000000ULL); // Wake up periodically to do scheduled jobs
+      esp_sleep_enable_timer_wakeup((uint64_t)secs * 1000000ULL);
+    } else {
+      esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
     }
 
-    // Disable CPU interrupt servicing
+    // Disable CPU interrupt servicing while checking and arming wake sources.
     portENTER_CRITICAL(&sleepMux);
 
-    // Skip sleep if there is a LoRa packet
-    if (gpio_get_level(wakeupPin) == HIGH) {
+    bool wakeAlreadyAsserted = gpio_get_level(loraWakeupPin) == HIGH;
+#ifdef PIN_USER_BTN
+    wakeAlreadyAsserted = wakeAlreadyAsserted ||
+                          gpio_get_level(buttonWakeupPin) == USER_BTN_PRESSED;
+#endif
+    if (wakeAlreadyAsserted) {
       portEXIT_CRITICAL(&sleepMux);
       delay(1);
       return;
     }
 
-    // Configure GPIO wakeup
     esp_sleep_enable_gpio_wakeup();
-    gpio_wakeup_enable((gpio_num_t)wakeupPin, GPIO_INTR_HIGH_LEVEL); // Wake up when receiving a LoRa packet
+    gpio_wakeup_enable(loraWakeupPin, GPIO_INTR_HIGH_LEVEL);
+#ifdef PIN_USER_BTN
+    gpio_wakeup_enable(
+        buttonWakeupPin,
+        USER_BTN_PRESSED == LOW ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
+#endif
 
-    // MCU enters light sleep
+    // The SX1262 remains in RX. A packet raises DIO1 immediately; PRG also
+    // wakes the MCU so local Bluetooth/display controls stay responsive.
     esp_light_sleep_start();
 
-    // Avoid ISR flood during wakeup due to HIGH LEVEL interrupt
-    gpio_wakeup_disable(wakeupPin);
-    gpio_set_intr_type(wakeupPin, GPIO_INTR_POSEDGE);
+    // Avoid ISR floods after a level-triggered wake and restore normal DIO1
+    // edge handling for RadioLib.
+    gpio_wakeup_disable(loraWakeupPin);
+#ifdef PIN_USER_BTN
+    gpio_wakeup_disable(buttonWakeupPin);
+#endif
+    gpio_set_intr_type(loraWakeupPin, GPIO_INTR_POSEDGE);
 
-    // Enable CPU interrupt servicing
     portEXIT_CRITICAL(&sleepMux);
   }
 
