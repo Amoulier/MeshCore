@@ -1,29 +1,30 @@
 # Heltec V4 energy-optimization implementation
 
 This generation reduces unnecessary board, display, sensor and connectivity
-activity without lowering LoRa transmit power. It preserves the historical
-MeshCore meaning of `tx`: requested **SX1262 input dBm**, not measured antenna
-output.
+activity while keeping LoRa transmission at the maximum permitted by this
+fork's FEM-aware output policy.
 
 ## RF policy
 
-- New installations default to 11 dBm SX1262 input instead of 10 dBm.
-- On GC1109 hardware, 11 dBm input maps to the existing estimate of 22 dBm at
-  the antenna path.
-- On KCT8103L hardware, the board limits the SX1262 input to 9 dBm, which maps
-  to the same existing 22 dBm estimate.
-- Persisted `tx` values are not silently overwritten during an update.
+- Every retained Heltec V4 target requests `MAX_LORA_TX_POWER` before the
+  board-specific FEM mapping.
+- The existing estimated antenna-path ceiling remains 22 dBm.
+- GC1109 hardware applies 11 dBm at the SX1262 input.
+- KCT8103L hardware applies 9 dBm at the SX1262 input.
+- Lower persisted values or client commands remain protocol-compatible but
+  cannot reduce physical transmit power.
 - A 20 microsecond FEM-settle guard is applied before the first LoRa preamble
-  symbol, preventing the transmission from beginning while the external front
-  end is still changing state.
-- Runtime RX profiles change receiver gain only; they never reduce TX power.
+  symbol, preventing transmission from beginning while the external front end
+  is still changing state.
+- Runtime RX profiles affect receiver gain only and never alter TX power.
 
 The 22 dBm value is a firmware estimate based on the detected front end. It is
 not a substitute for measuring conducted RF power on V4.2 and V4.3 hardware.
 
 ## Supported targets
 
-The distribution builds ten Heltec V4 OLED targets. Solar Repeater replaces the official standard Repeater; the other nine roles are retained.
+The distribution builds ten Heltec V4 OLED targets. Solar Repeater replaces the
+official standard Repeater; the other nine roles are retained.
 
 ## Solar Repeater
 
@@ -56,8 +57,8 @@ precedence over new-install defaults. No headless Solar target is included.
 - Production BLE and Wi-Fi targets no longer enable verbose transport logging.
 - Repeater, Room Server and Sensor initialize the board and low-voltage guard
   before starting the debug serial port.
-- New-install local advertisements are less frequent: thirty minutes for Solar Repeater and sixteen minutes for
-  Room Server and Sensor.
+- New-install local advertisements are less frequent: thirty minutes for Solar
+  Repeater and sixteen minutes for Room Server and Sensor.
 
 ## Framework limitation recorded by the audit
 
@@ -68,8 +69,9 @@ management are not enabled. Application build flags cannot retroactively enable
 those precompiled components.
 
 The retained ten targets use cooperative idle and explicit peripheral and
-transport power saving. DFS and automatic light sleep remain unavailable with
-the pinned framework.
+transport power saving. Framework-managed automatic light sleep remains
+unavailable, but the BLE Companion uses explicit ESP32-S3 light sleep after the
+Bluetooth stack has been fully shut down.
 
 ## Connectivity policies
 
@@ -79,10 +81,17 @@ the pinned framework.
 - Changes to a slower advertising interval after that minute.
 - Requests short connection intervals while data is active.
 - Requests longer intervals and slave latency after ten seconds without data.
-- Turns Bluetooth off after five minutes without a connection, matching the former
-  BLE low-power variant. Connected sessions are not shut down by this timer.
-- Restore Bluetooth from the node's Bluetooth page with a long PRG press; enabling
-  it starts a fresh five-minute window. LoRa continues while Bluetooth is off.
+- After five minutes without a connection, fully deinitializes Bluedroid and
+  the ESP32-S3 Bluetooth controller. Connected sessions are never stopped by
+  this timer.
+- While Bluetooth is fully down and the mesh has no pending work, enters
+  explicit light sleep.
+- The SX1262 remains in continuous receive; LoRa DIO1 wakes the MCU immediately.
+- PRG and a one-second maintenance timer are also configured as wake sources.
+- Restoring Bluetooth from the node's Bluetooth page with a long PRG press
+  performs a clean reboot. Identity, contacts, channels and persistent settings
+  remain intact.
+- The maximum TX policy is unchanged before, during and after the BLE-off state.
 
 ### Standard Wi-Fi Companion
 
@@ -112,14 +121,15 @@ set radio.rxprofile battery
 ```
 
 GC1109 does not expose the same independently controllable external LNA path,
-so the profile command reports that its external receive path is fixed.
+so the profile command reports that its external receive path is fixed. RX
+profiles never lower physical transmit power.
 
 ## Selective upstream connectivity and telemetry integration
 
-The BLE Companion also provides an optional Wi-Fi/TCP interface. On a
-fresh BLE installation no SSID is configured, so the Wi-Fi radio and TCP server
-are not started. The Wi-Fi Companion retains their compile-time fallback
-credentials. Stored credentials take precedence over those build defaults.
+The BLE Companion also provides an optional Wi-Fi/TCP interface. On a fresh BLE
+installation no SSID is configured, so the Wi-Fi radio and TCP server are not
+started. The Wi-Fi Companion retains their compile-time fallback credentials.
+Stored credentials take precedence over those build defaults.
 
 ```text
 set wifi.ssid network-name
@@ -135,8 +145,9 @@ stored credentials and restores the build defaults. `get wifi.pwd` reports only
 whether a password is configured; it does not return the password. Settings use
 the existing protected Companion preferences storage.
 
-Wi-Fi reconnect backoff and modem power saving remain in place. BLE and
-ESP-NOW remain continuously available in their corresponding retained targets.
+Wi-Fi reconnect backoff and modem power saving remain in place. The BLE
+Companion only enters the BLE-off light-sleep path when optional Wi-Fi is not
+configured and active.
 
 Sensor nodes support authenticated, scoped telemetry subscriptions with a
 caller-supplied lifetime and nonnegative scalar LPP change thresholds. Invalid,
@@ -145,25 +156,28 @@ Expired subscriptions stop producing updates. Subscription state is transient:
 clients must subscribe again after a reboot.
 
 The Companion forwards unhandled binary responses, including pushed telemetry,
-to the connected application. The UI now receives mesh events through a listener
+to the connected application. The UI receives mesh events through a listener
 while retaining the local OLED page, release-to-disable action, persistent wake
 suppression, calibrated battery percentage and long-PRG restoration behavior.
 
 `get gps diag` adds observation-only GPS diagnostics. The Heltec GPS startup
 suppression, UART shutdown and independent VEXT claims remain unchanged.
 
-### Physical qualification
+## Physical qualification
 
-CI validates native policy tests, compilation of every environment, generation
-of application/OTA images and generation of complete merged images. It cannot
+CI validates source invariants, native policy tests, compilation of every
+environment, application/OTA images and complete merged images. It cannot
 measure electrical current, RF output or packet loss.
 
 Hardware qualification still requires:
 
-- Current measurements in idle, RX, TX, advertising, connected and sleep
-  states.
+- Current measurements in idle, RX, TX, advertising, connected and BLE-off
+  light-sleep states.
 - Conducted RF measurements on GC1109 and KCT8103L boards.
-- BLE pairing, bonding and reconnection tests on Android and iOS.
+- BLE pairing, bonding, five-minute shutdown and PRG restoration tests on
+  Android and iOS.
 - Wi-Fi reconnect tests with the access point available and unavailable.
-- ESP-NOW delivery tests across active and inactive windows.
+- ESP-NOW delivery tests.
 - Sensor sample, transmit and subscription-expiry tests.
+- A complete Solar Repeater 3.50 V / 3.65 V recovery cycle.
+- A full battery-runtime comparison under controlled traffic and radio settings.
