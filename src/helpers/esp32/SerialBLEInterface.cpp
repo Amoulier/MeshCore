@@ -1,6 +1,7 @@
 #include "SerialBLEInterface.h"
 #include "esp_mac.h"
 #include <esp_gap_ble_api.h>
+#include <esp_system.h>
 
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -10,11 +11,20 @@
 #define BLE_FAST_ADV_DURATION_MS 60000UL
 #define BLE_IDLE_CONNECTION_AFTER_MS 10000UL
 
-// Advertising units are 0.625 ms.
+// Advertising units are 0.625 ms. Keep the initial discovery window fast,
+// then reduce the long-term advertising duty cycle until the five-minute
+// disconnected timeout powers Bluetooth down completely.
 #define BLE_FAST_ADV_MIN 160
 #define BLE_FAST_ADV_MAX 240
-#define BLE_SLOW_ADV_MIN 800
-#define BLE_SLOW_ADV_MAX 1600
+#define BLE_SLOW_ADV_MIN 3200
+#define BLE_SLOW_ADV_MAX 4800
+
+// This fork only builds the Heltec V4 ESP32-S3 BLE Companion. Stopping a GATT
+// service is not sufficient to remove the controller/host current, so the
+// Heltec build performs a full shutdown after the configured idle timeout.
+#if defined(HELTEC_LORA_V4) && !defined(HELTEC_V4_BLE_FULL_SHUTDOWN)
+#define HELTEC_V4_BLE_FULL_SHUTDOWN 1
+#endif
 
 void SerialBLEInterface::begin(const char *prefix, char *name, uint32_t pin_code)
 {
@@ -112,7 +122,8 @@ void SerialBLEInterface::updatePowerPolicy()
   // Companion trades unattended discoverability for lower draw after the
   // configured disconnected interval. Restore Bluetooth locally from the
   // node's Bluetooth page with a long PRG press.
-  if (_isEnabled && pServer->getConnectedCount() == 0 && disconnected_since &&
+  if (_isEnabled && pServer != NULL && pServer->getConnectedCount() == 0 &&
+      disconnected_since &&
       static_cast<uint32_t>(now - disconnected_since) >= HELTEC_V4_BLE_AUTO_OFF_MSEC) {
     disable();
     return;
@@ -163,8 +174,10 @@ void SerialBLEInterface::onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl)
   } else {
     BLE_DEBUG_PRINTLN("Authentication Failure");
     disconnected_since = millis();
-    pServer->disconnect(pServer->getConnId());
-    adv_restart_time = millis() + ADVERT_RESTART_DELAY;
+    if (pServer != NULL) {
+      pServer->disconnect(pServer->getConnId());
+      adv_restart_time = millis() + ADVERT_RESTART_DELAY;
+    }
   }
 }
 
@@ -233,6 +246,16 @@ void SerialBLEInterface::clearBuffers()
 void SerialBLEInterface::enable()
 {
   if (_isEnabled) return;
+#if defined(HELTEC_V4_BLE_FULL_SHUTDOWN) && HELTEC_V4_BLE_FULL_SHUTDOWN
+  // Arduino-ESP32 2.x retains stale BLE server singletons after deinit(false).
+  // A clean reboot is the reliable way to reconstruct the stack, while all
+  // identity and settings remain preserved in flash.
+  if (stack_deinitialized) {
+    delay(20);
+    esp_restart();
+    return;
+  }
+#endif
   _isEnabled = true;
   disconnected_since = millis();
   clearBuffers();
@@ -244,14 +267,31 @@ void SerialBLEInterface::disable()
 {
   _isEnabled = false;
   BLE_DEBUG_PRINTLN("SerialBLEInterface::disable");
-  pServer->getAdvertising()->stop();
-  if (pServer->getConnectedCount() > 0) pServer->disconnect(last_conn_id);
-  pService->stop();
+  if (pServer != NULL) {
+    pServer->getAdvertising()->stop();
+    if (pServer->getConnectedCount() > 0) {
+      pServer->disconnect(last_conn_id);
+      delay(50);
+    }
+  }
+  if (pService != NULL) pService->stop();
+  clearBuffers();
   oldDeviceConnected = deviceConnected = false;
   peer_address_valid = false;
   connection_profile_known = false;
   disconnected_since = 0;
+  advertising_fast = false;
   adv_restart_time = fast_adv_until = 0;
+
+#if defined(HELTEC_V4_BLE_FULL_SHUTDOWN) && HELTEC_V4_BLE_FULL_SHUTDOWN
+  // Stopping advertisements and the GATT service leaves Bluedroid and the BLE
+  // controller powered. Deinitializing both is the material battery fix.
+  BLEDevice::deinit(false);
+  pServer = NULL;
+  pService = NULL;
+  pTxCharacteristic = NULL;
+  stack_deinitialized = true;
+#endif
 }
 
 size_t SerialBLEInterface::writeFrame(const uint8_t src[], size_t len)
@@ -283,6 +323,10 @@ bool SerialBLEInterface::isWriteBusy() const
 
 size_t SerialBLEInterface::checkRecvFrame(uint8_t dest[])
 {
+  // The interface manager continues polling after BLE has been powered down.
+  // Avoid touching stale GATT pointers until the user requests a clean reboot.
+  if (stack_deinitialized) return 0;
+
   if (send_queue_len > 0 && millis() >= _last_write + BLE_WRITE_MIN_INTERVAL) {
     _last_write = millis();
     pTxCharacteristic->setValue(send_queue[0].buf, send_queue[0].len);
