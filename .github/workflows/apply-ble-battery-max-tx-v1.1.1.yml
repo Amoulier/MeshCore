@@ -1,0 +1,211 @@
+name: Apply BLE Battery Hotfix and Max TX v1.1.1
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-ble-battery-max-tx-v1.1.1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-heltec-v4-ble-battery-max-tx-v1-1-1
+  cancel-in-progress: false
+
+jobs:
+  validate-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply maximum-TX policy and permanent documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'expected text not found in {path}: {old!r}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          def insert_before_once(path, marker, addition):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if addition in text:
+                  return
+              if marker not in text:
+                  raise SystemExit(f'marker not found in {path}: {marker!r}')
+              p.write_text(text.replace(marker, addition + marker, 1), encoding='utf-8')
+
+          replace_once(
+              'variants/heltec_v4/platformio.ini',
+              '  -D LORA_TX_POWER=11\n  -D LORA_RADIO_BOOT_POWER=0',
+              '  -D LORA_TX_POWER=22\n  -D HELTEC_V4_FORCE_MAX_TX=1\n  -D LORA_RADIO_BOOT_POWER=0',
+          )
+
+          insert_before_once(
+              'variants/heltec_v4/HeltecV4PowerPolicy.h',
+              'inline int8_t radioInputPowerForRequestedOutput',
+              '''inline int8_t requestedRadioInputForPolicy(int8_t requested_radio_dbm,\n                                                int8_t maximum_requested_dbm,\n                                                bool force_maximum)\n{\n  if (force_maximum) {\n    requested_radio_dbm = maximum_requested_dbm;\n  }\n  if (requested_radio_dbm < -9) {\n    return -9;\n  }\n  if (requested_radio_dbm > 22) {\n    return 22;\n  }\n  return requested_radio_dbm;\n}\n\n''',
+          )
+
+          replace_once(
+              'variants/heltec_v4/HeltecV4Board.cpp',
+              '#ifndef HELTEC_V4_MAX_OUTPUT_POWER_DBM\n#define HELTEC_V4_MAX_OUTPUT_POWER_DBM 22\n#endif\n#ifndef HELTEC_V4_BATTERY_CACHE_MSEC',
+              '#ifndef HELTEC_V4_MAX_OUTPUT_POWER_DBM\n#define HELTEC_V4_MAX_OUTPUT_POWER_DBM 22\n#endif\n#ifndef HELTEC_V4_FORCE_MAX_TX\n#define HELTEC_V4_FORCE_MAX_TX 0\n#endif\n#ifndef HELTEC_V4_BATTERY_CACHE_MSEC',
+          )
+          replace_once(
+              'variants/heltec_v4/HeltecV4Board.cpp',
+              '''int8_t HeltecV4Board::mapRadioTxPower(int8_t requested_radio_dbm)\n{\n  if (requested_radio_dbm < -9) {\n    requested_radio_dbm = -9;\n  } else if (requested_radio_dbm > 22) {\n    requested_radio_dbm = 22;\n  }\n\n  last_requested_radio_dbm = requested_radio_dbm;''',
+              '''int8_t HeltecV4Board::mapRadioTxPower(int8_t requested_radio_dbm)\n{\n  requested_radio_dbm = heltec_v4::requestedRadioInputForPolicy(\n      requested_radio_dbm, HELTEC_V4_MAX_OUTPUT_POWER_DBM,\n      HELTEC_V4_FORCE_MAX_TX != 0);\n\n  last_requested_radio_dbm = requested_radio_dbm;''',
+          )
+          replace_once(
+              'variants/heltec_v4/HeltecV4Board.cpp',
+              '''    sprintf(reply, "> requested-radio:%ddBm,applied-radio:%ddBm,estimated-output:%ddBm",\n            last_requested_radio_dbm, last_radio_input_dbm, estimated_output_dbm);''',
+              '''#if HELTEC_V4_FORCE_MAX_TX\n    sprintf(reply, "> requested-radio:%ddBm,applied-radio:%ddBm,estimated-output:%ddBm,policy:max-locked",\n            last_requested_radio_dbm, last_radio_input_dbm, estimated_output_dbm);\n#else\n    sprintf(reply, "> requested-radio:%ddBm,applied-radio:%ddBm,estimated-output:%ddBm",\n            last_requested_radio_dbm, last_radio_input_dbm, estimated_output_dbm);\n#endif''',
+          )
+
+          replace_once(
+              'examples/companion_radio/MyMesh.cpp',
+              '  _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);\n  _prefs.gps_enabled',
+              '''  _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);\n#if defined(HELTEC_V4_FORCE_MAX_TX) && HELTEC_V4_FORCE_MAX_TX\n  // This hardware-focused fork intentionally locks every Heltec V4 role to\n  // the FEM-aware maximum. The board maps this request to 11 dBm on GC1109\n  // or 9 dBm on KCT8103L, preserving the estimated 22 dBm antenna ceiling.\n  _prefs.tx_power_dbm = MAX_LORA_TX_POWER;\n#endif\n  _prefs.gps_enabled''',
+          )
+          replace_once(
+              'examples/companion_radio/MyMesh.cpp',
+              '''    } else {\n      _prefs.tx_power_dbm = power;\n      savePrefs();\n      radio_driver.setTxPower(_prefs.tx_power_dbm);\n      writeOKFrame();\n    }\n  } else if (cmd_frame[0] == CMD_SET_TUNING_PARAMS) {''',
+              '''    } else {\n#if defined(HELTEC_V4_FORCE_MAX_TX) && HELTEC_V4_FORCE_MAX_TX\n      (void)power;\n      _prefs.tx_power_dbm = MAX_LORA_TX_POWER;\n#else\n      _prefs.tx_power_dbm = power;\n#endif\n      savePrefs();\n      radio_driver.setTxPower(_prefs.tx_power_dbm);\n      writeOKFrame();\n    }\n  } else if (cmd_frame[0] == CMD_SET_TUNING_PARAMS) {''',
+          )
+
+          insert_before_once(
+              'test/test_heltec_v4_power_policy/test_heltec_v4_power_policy.cpp',
+              'int main(int argc, char **argv)',
+              '''TEST(HeltecV4RadioPower, ForcedMaximumPolicyIgnoresLowerRequests)\n{\n  EXPECT_EQ(22, requestedRadioInputForPolicy(-9, 22, true));\n  EXPECT_EQ(22, requestedRadioInputForPolicy(10, 22, true));\n  EXPECT_EQ(22, requestedRadioInputForPolicy(22, 22, true));\n  EXPECT_EQ(-9, requestedRadioInputForPolicy(-12, 22, false));\n  EXPECT_EQ(10, requestedRadioInputForPolicy(10, 22, false));\n  EXPECT_EQ(22, requestedRadioInputForPolicy(30, 22, false));\n  EXPECT_EQ(11, clampGc1109RadioInput(requestedRadioInputForPolicy(0, 22, true), 22));\n  EXPECT_EQ(9, clampKct8103lRadioInput(requestedRadioInputForPolicy(0, 22, true), 22));\n}\n\n''',
+          )
+
+          replace_once(
+              'README.md',
+              '| `heltec_v4_companion_radio_ble` | BLE Companion with automatic Bluetooth shutdown after five disconnected minutes |',
+              '| `heltec_v4_companion_radio_ble` | BLE Companion that fully powers Bluetooth down after five disconnected minutes and light-sleeps while LoRa remains available |',
+          )
+          replace_once(
+              'README.md',
+              'New installations now default to **11 dBm** SX1262 input instead of 10 dBm. FEM-aware limiting applies 11 dBm on GC1109 and 9 dBm on KCT8103L, producing the existing estimated 22 dBm antenna-path ceiling on either revision. Persisted `tx` values are preserved during an update. A 20 microsecond FEM-settle guard prevents the first preamble symbol from starting while the external front end is changing into TX mode.',
+              'Every Heltec V4 build now requests the maximum continuously. The board locks the request to the existing FEM-aware estimated **22 dBm antenna-path ceiling**, applying 11 dBm to the SX1262 on GC1109 hardware and 9 dBm on KCT8103L hardware. Lower stored or runtime `tx` requests no longer reduce physical transmit power. A 20 microsecond FEM-settle guard prevents the first preamble symbol from starting while the external front end is changing into TX mode.',
+          )
+          replace_once(
+              'README.md',
+              "Bluetooth turns off after five minutes without a connection; active connections are retained. To reconnect afterward, open the node's Bluetooth page and hold PRG to enable Bluetooth again. LoRa reception continues while Bluetooth is off.",
+              "After five minutes without a BLE connection, the Companion fully deinitializes Bluedroid and the ESP32-S3 Bluetooth controller, then enters explicit light sleep whenever the mesh is idle. The SX1262 remains in continuous receive and wakes the MCU through DIO1; PRG and a one-second maintenance timer are also wake sources. To restore Bluetooth, open the Bluetooth page and hold PRG. The node performs a clean reboot while preserving identity, contacts, channels and saved settings.",
+          )
+          replace_once(
+              'README.md',
+              '`get power.status` reports raw millivolts, the filtered percentage and the active power profile. `get radio.power` reports requested SX1262 input, the value actually applied after the FEM limit, and estimated antenna output.',
+              '`get power.status` reports raw millivolts, the filtered percentage and the active power profile. `get radio.power` reports the maximum locked request, the value actually applied after the FEM limit, the estimated antenna output and `policy:max-locked`.',
+          )
+
+          replace_once(
+              'docs/HELTEC_V4_ENERGY_OPTIMIZATION.md',
+              '''- New installations default to 11 dBm SX1262 input instead of 10 dBm.\n- On GC1109 hardware, 11 dBm input maps to the existing estimate of 22 dBm at\n  the antenna path.\n- On KCT8103L hardware, the board limits the SX1262 input to 9 dBm, which maps\n  to the same existing 22 dBm estimate.\n- Persisted `tx` values are not silently overwritten during an update.''',
+              '''- Every Heltec V4 target locks the transmit request to the maximum permitted\n  by the existing estimated 22 dBm antenna-path ceiling.\n- GC1109 applies 11 dBm at the SX1262 input; KCT8103L applies 9 dBm.\n- Lower persisted or runtime `tx` requests are accepted for protocol\n  compatibility but cannot reduce physical transmit power.''',
+          )
+          replace_once(
+              'docs/HELTEC_V4_ENERGY_OPTIMIZATION.md',
+              '''- Turns Bluetooth off after five minutes without a connection, matching the former\n  BLE low-power variant. Connected sessions are not shut down by this timer.\n- Restore Bluetooth from the node's Bluetooth page with a long PRG press; enabling\n  it starts a fresh five-minute window. LoRa continues while Bluetooth is off.''',
+              '''- After five minutes without a connection, fully deinitializes Bluedroid and\n  the ESP32-S3 Bluetooth controller; connected sessions are never stopped by\n  this timer.\n- While Bluetooth is fully down and the mesh is idle, enters explicit light\n  sleep with immediate LoRa DIO1 and PRG wake plus a one-second maintenance\n  timer. The SX1262 and FEM remain in receive, and the maximum TX policy is\n  unchanged.\n- Restoring Bluetooth from the node's Bluetooth page with a long PRG press\n  performs a clean reboot. Identity and persistent configuration are retained.''',
+          )
+          replace_once(
+              'docs/HELTEC_V4_ENERGY_OPTIMIZATION.md',
+              'The retained ten targets use cooperative idle and explicit peripheral and\ntransport power saving. DFS and automatic light sleep remain unavailable with\nthe pinned framework.',
+              'The retained ten targets use cooperative idle and explicit peripheral and\ntransport power saving. Framework-managed automatic light sleep remains\nunavailable, but the BLE Companion uses explicit ESP32-S3 light sleep after the\nBluetooth stack has been fully shut down.',
+          )
+
+          replace_once(
+              '.github/workflows/heltec-v4-validation-release.yml',
+              '          Companion BLE uses the six-digit PIN shown on the OLED unless a\n          permanent PIN has been configured. The OLED can be disabled locally\n          from the node and restored with the PRG button.\n',
+              '          Companion BLE uses the six-digit PIN shown on the OLED unless a\n          permanent PIN has been configured. The OLED can be disabled locally\n          from the node and restored with the PRG button. After five disconnected\n          minutes, Bluetooth powers down completely and the MCU light-sleeps; use\n          the Bluetooth page and PRG to reboot cleanly and restore BLE. TX stays\n          locked at the FEM-aware maximum estimated 22 dBm ceiling.\n',
+          )
+          replace_once(
+              '.github/workflows/heltec-v4-validation-release.yml',
+              '- `heltec_v4_companion_radio_ble` - Phone Companion over BLE; Bluetooth turns off after five disconnected minutes and can be restored locally with PRG.',
+              '- `heltec_v4_companion_radio_ble` - Phone Companion over BLE; after five disconnected minutes it fully powers down Bluetooth and light-sleeps while preserving LoRa RX. PRG restores BLE through a clean reboot.',
+          )
+          replace_once(
+              '.github/workflows/heltec-v4-validation-release.yml',
+              '            role-specific peripheral builds, and the existing FEM-aware estimated 22 dBm ceiling.\n\n            Validation:',
+              '            role-specific peripheral builds, explicit BLE-off light sleep, and a\n            transmit policy locked to the FEM-aware maximum estimated 22 dBm ceiling.\n\n            Battery hotfix v1.1.1 fully deinitializes Bluedroid and the ESP32-S3\n            controller after five disconnected minutes, then light-sleeps the MCU\n            while preserving continuous LoRa RX, PRG wake, identity and settings.\n\n            Validation:',
+          )
+          replace_once(
+              '.github/workflows/heltec-v4-validation-release.yml',
+              '            Validation: all 82 native tests and all ten firmware builds passed before\n            integration. The release rebuild validates both image formats for every role.',
+              '            Validation: the complete native test suite and the Companion BLE and\n            Solar Repeater builds passed before integration. The release rebuild\n            validates both image formats for all ten roles.',
+          )
+
+          Path('.github/release/heltec-v4-energy-version.txt').write_text(
+              'heltec-v4-energy-v1.1.1\n', encoding='utf-8')
+
+          for obsolete in (
+              '.github/workflows/apply-ble-battery-max-tx-v1.1.1.yml',
+              '.github/workflows/validate-release-ble-battery-hotfix.yml',
+              '.github/workflows/trigger-battery-hotfix-validation.yml',
+          ):
+              p = Path(obsolete)
+              if p.exists():
+                  p.unlink()
+          PY
+
+      - name: Verify source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'BLEDevice::deinit(false)' src/helpers/esp32/SerialBLEInterface.cpp
+          grep -Fq 'isFullyPoweredDown()' src/helpers/esp32/SerialBLEInterface.h
+          grep -Fq 'board.sleep(1)' examples/companion_radio/main.cpp
+          grep -Fq 'buttonWakeupPin' src/helpers/ESP32Board.h
+          grep -Fq -- '-D LORA_TX_POWER=22' variants/heltec_v4/platformio.ini
+          grep -Fq -- '-D HELTEC_V4_FORCE_MAX_TX=1' variants/heltec_v4/platformio.ini
+          grep -Fq 'policy:max-locked' variants/heltec_v4/HeltecV4Board.cpp
+          test "$(tr -d '[:space:]' < .github/release/heltec-v4-energy-version.txt)" = 'heltec-v4-energy-v1.1.1'
+          git diff --check
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Run native tests and representative firmware builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          pio test -e native
+          pio run -e heltec_v4_companion_radio_ble
+          pio run -e heltec_v4_companion_radio_ble -t mergebin
+          pio run -e heltec_v4_solar_repeater
+          pio run -e heltec_v4_solar_repeater -t mergebin
+          python3 - <<'PY'
+          from pathlib import Path
+          for env in ('heltec_v4_companion_radio_ble', 'heltec_v4_solar_repeater'):
+              app = Path(f'.pio/build/{env}/firmware.bin').read_bytes()
+              merged = Path(f'.pio/build/{env}/firmware-merged.bin').read_bytes()
+              assert app and app[0] == 0xE9
+              assert merged and merged[0] == 0xE9
+              assert len(merged) > 0x10000 and merged[0x10000] == 0xE9
+          PY
+
+      - name: Commit validated v1.1.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Amoulier'
+          git config user.email 'Amoulier@gmail.com'
+          git add -A
+          git commit -m 'release: Heltec V4 BLE battery hotfix and max TX v1.1.1'
+          git push origin HEAD:main
