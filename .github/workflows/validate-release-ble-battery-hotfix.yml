@@ -1,16 +1,20 @@
 name: Validate and Release BLE Battery Hotfix
 
 on:
-  issue_comment:
-    types: [created]
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: heltec-v4-ble-battery-hotfix
+  cancel-in-progress: false
+
 jobs:
   validate-release:
-    if: github.event.issue.number == 13 && github.event.comment.body == '/validate-battery-hotfix'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
