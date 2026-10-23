@@ -1,5 +1,6 @@
 #pragma once
 
+#include <math.h>
 #include <stdint.h>
 
 namespace heltec_v4 {
@@ -9,6 +10,14 @@ enum class PowerProfile : uint8_t {
   SolarRepeater = 1
 };
 
+enum class RfPowerClass : uint8_t {
+  LowPower22 = 22,
+  HighPower28 = 28
+};
+
+constexpr int8_t LOW_POWER_OUTPUT_DBM = 22;
+constexpr int8_t HIGH_POWER_OUTPUT_DBM = 28;
+
 static const uint16_t STANDARD_OCV_MILLIVOLTS[11] = {
   4300, 4160, 4080, 4000, 3920, 3825, 3720, 3630, 3530, 3420, 3100
 };
@@ -17,6 +26,9 @@ static const uint16_t SOLAR_OCV_MILLIVOLTS[11] = {
   4300, 4160, 4080, 4000, 3920, 3825, 3750, 3690, 3630, 3565, 3500
 };
 
+// Gain tables published by Meshtastic/Heltec for the V4 front ends. They are
+// also used to estimate antenna-path output after the manufacturer-specific
+// input-power conversion has been applied.
 static const uint8_t GC1109_TX_GAIN_DB[22] = {
   11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
   11, 11, 11, 11, 11, 10, 10, 9, 9, 8, 7
@@ -110,6 +122,17 @@ inline uint8_t slewBatteryPercent(uint8_t reported_percent,
            : static_cast<uint8_t>(reported_percent - 1);
 }
 
+inline int8_t clampRadioInput(int16_t radio_input_dbm, int8_t maximum_input_dbm = 22)
+{
+  if (radio_input_dbm < -9) {
+    return -9;
+  }
+  if (radio_input_dbm > maximum_input_dbm) {
+    return maximum_input_dbm;
+  }
+  return static_cast<int8_t>(radio_input_dbm);
+}
+
 inline int8_t radioInputPowerForRequestedOutput(int8_t requested_output_dbm,
                                                 const uint8_t (&gain_table)[22])
 {
@@ -118,27 +141,31 @@ inline int8_t radioInputPowerForRequestedOutput(int8_t requested_output_dbm,
     const bool exceeded_request = estimated_output > requested_output_dbm;
     const bool reached_last_point = radio_dbm == 21 && estimated_output <= requested_output_dbm;
     if (exceeded_request || reached_last_point) {
-      int16_t radio_input = requested_output_dbm - gain_table[radio_dbm];
-      if (radio_input < -9) {
-        radio_input = -9;
-      } else if (radio_input > 22) {
-        radio_input = 22;
-      }
-      return static_cast<int8_t>(radio_input);
+      return clampRadioInput(static_cast<int16_t>(requested_output_dbm) - gain_table[radio_dbm]);
     }
   }
 
-  return requested_output_dbm;
+  return clampRadioInput(requested_output_dbm);
 }
 
+// Heltec's current V4 GC1109 driver converts requested antenna-path output to
+// SX1262 input with this measured cubic curve, then clamps the radio to -9..20
+// dBm. In particular, a requested 28 dBm maps to 19 dBm at the SX1262.
 inline int8_t gc1109RadioInputPower(int8_t requested_output_dbm)
 {
-  return radioInputPowerForRequestedOutput(requested_output_dbm, GC1109_TX_GAIN_DB);
+  const float x = static_cast<float>(requested_output_dbm);
+  const float converted = 0.0004f * x * x * x - 0.011f * x * x + 1.0866f * x - 11.365f;
+  return clampRadioInput(static_cast<int16_t>(floorf(converted)), 20);
 }
 
 inline int8_t kct8103lRadioInputPower(int8_t requested_output_dbm)
 {
   return radioInputPowerForRequestedOutput(requested_output_dbm, KCT8103L_TX_GAIN_DB);
+}
+
+inline int8_t lowPowerRadioInputPower(int8_t requested_output_dbm)
+{
+  return clampRadioInput(requested_output_dbm, LOW_POWER_OUTPUT_DBM);
 }
 
 inline int8_t estimatedOutputPowerForRadioInput(int8_t radio_input_dbm,
@@ -169,12 +196,7 @@ inline int8_t clampRadioInputForOutputLimit(int8_t requested_radio_dbm,
                                             int8_t output_limit_dbm,
                                             const uint8_t (&gain_table)[22])
 {
-  if (requested_radio_dbm < -9) {
-    requested_radio_dbm = -9;
-  } else if (requested_radio_dbm > 22) {
-    requested_radio_dbm = 22;
-  }
-
+  requested_radio_dbm = clampRadioInput(requested_radio_dbm);
   const int8_t maximum_safe_input = maximumRadioInputForOutputLimit(output_limit_dbm, gain_table);
   return requested_radio_dbm > maximum_safe_input ? maximum_safe_input : requested_radio_dbm;
 }
@@ -197,6 +219,18 @@ inline int8_t clampGc1109RadioInput(int8_t requested_radio_dbm, int8_t output_li
 inline int8_t clampKct8103lRadioInput(int8_t requested_radio_dbm, int8_t output_limit_dbm)
 {
   return clampRadioInputForOutputLimit(requested_radio_dbm, output_limit_dbm, KCT8103L_TX_GAIN_DB);
+}
+
+inline bool isFrequencyCompatibleWithPowerClass(float frequency_mhz, RfPowerClass power_class)
+{
+  return power_class == RfPowerClass::HighPower28
+           ? frequency_mhz >= 863.0f && frequency_mhz <= 928.0f
+           : frequency_mhz >= 433.0f && frequency_mhz <= 510.0f;
+}
+
+inline const char *rfPowerClassName(RfPowerClass power_class)
+{
+  return power_class == RfPowerClass::HighPower28 ? "high-power" : "low-power";
 }
 
 } // namespace heltec_v4
