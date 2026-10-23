@@ -1,20 +1,20 @@
-name: Issue Triggered Heltec V4 v1.1.1 Release
+name: PR Triggered Heltec V4 v1.1.1 Release
 
 on:
-  issues:
+  pull_request:
     types: [opened]
 
 permissions:
   contents: write
-  issues: write
+  pull-requests: write
 
 concurrency:
-  group: heltec-v4-v1-1-1-issue-release
+  group: heltec-v4-v1-1-1-pr-release
   cancel-in-progress: false
 
 jobs:
   build:
-    if: github.event.issue.title == '[release] heltec-v4-energy-v1.1.1'
+    if: github.event.pull_request.title == '[release] heltec-v4-energy-v1.1.1'
     name: Package ${{ matrix.environment }}
     runs-on: ubuntu-latest
     strategy:
@@ -94,7 +94,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.event.issue.title == '[release] heltec-v4-energy-v1.1.1'
+    if: github.event.pull_request.title == '[release] heltec-v4-energy-v1.1.1'
     name: Publish Heltec V4 v1.1.1
     needs: build
     runs-on: ubuntu-latest
@@ -189,7 +189,7 @@ jobs:
             out/INSTALLATION.txt
             out/SHA256SUMS.txt
 
-      - name: Close trigger issue
+      - name: Close trigger pull request
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh issue close "${{ github.event.issue.number }}" --repo "${GITHUB_REPOSITORY}" --reason completed
+        run: gh pr close "${{ github.event.pull_request.number }}" --repo "${GITHUB_REPOSITORY}" --comment "v1.1.1 release published; trigger PR closed automatically."
