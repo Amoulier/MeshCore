@@ -54,8 +54,8 @@ power-meter measurement.
 The RAM collector and USB sleep override are excluded from normal BLE,
 USB and Wi-Fi Companion images; all three were rebuilt and their application
 and merged image headers checked. All 83 host tests passed locally. The
-previous ten-target build validation remains recorded separately. Repository
-GitHub Actions was disabled during this work; no remote CI result is claimed.
+previous ten-target build validation remains recorded separately. No passing
+remote CI result was available for this validation; these checks ran locally.
 
 After testing, the original normal BLE application slot was restored from the
 verified 16 MiB pre-test snapshot. Esptool verified its on-device hash. BLE
