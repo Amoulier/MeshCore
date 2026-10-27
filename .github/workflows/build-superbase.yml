@@ -1,0 +1,38 @@
+name: Build SuperBase Companion BLE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/superbase-companion-ble]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Build SuperBase firmware
+        env:
+          FIRMWARE_VERSION: superbase-ble
+          DISABLE_DEBUG: '1'
+        run: bash build.sh build-firmware muzi_base_uno_superIO_companion_radio_ble
+
+      - name: Check firmware and generate checksums
+        working-directory: out
+        run: |
+          test -n "$(find . -maxdepth 1 -name '*.uf2' -print -quit)"
+          sha256sum *.uf2 *.zip > SHA256SUMS.txt
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: superbase-companion-ble-${{ github.sha }}
+          path: out/
+          if-no-files-found: error

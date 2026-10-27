@@ -1,3 +1,7 @@
+## Muzi Works SuperBase
+
+This branch defaults to the Base Uno + Super IO Bluetooth Companion profile. See [SUPERBASE.md](./SUPERBASE.md) for build, installation and pairing instructions in Spanish.
+
 ## About MeshCore
 
 MeshCore is a lightweight, portable C++ library that enables multi-hop packet routing for embedded projects using LoRa and other packet radios. It is designed for developers who want to create resilient, decentralized communication networks that work without the internet.
