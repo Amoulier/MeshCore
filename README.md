@@ -1,6 +1,6 @@
 ## Muzi Works SuperBase
 
-This branch defaults to the Base Uno + Super IO Bluetooth Companion profile. See [SUPERBASE.md](./SUPERBASE.md) for build, installation and pairing instructions in Spanish.
+This branch defaults to the Base Uno + Super IO Bluetooth Companion profile, with battery/charger reporting, persistent runtime Bluetooth, DMs Only audio, captured button input, peripheral power saving and storage/radio recovery improvements. See [SUPERBASE.md](./SUPERBASE.md) for behavior, validation limits, build, installation and pairing instructions in Spanish.
 
 ## About MeshCore
 

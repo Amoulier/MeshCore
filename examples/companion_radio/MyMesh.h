@@ -194,12 +194,24 @@ protected:
   }
 
 public:
-  void savePrefs() {
+  bool savePrefs() {
     _prefs.node_lat = sensors.node_lat;
     _prefs.node_lon = sensors.node_lon;
-    _store->savePrefs(_prefs);
-    _prefs.clearDirty();
+    bool saved = _store->savePrefs(_prefs);
+    if (saved) _prefs.clearDirty();
+#ifdef MUZI_BASE_SUPERIO
+    _prefs_save_pending = !saved;
+    _prefs_retry_at = millis();
+#endif
+    return saved;
   }
+#ifdef MUZI_BASE_SUPERIO
+  bool prepareForShutdown() {
+    if (!savePrefs()) return false;
+    if (dirty_contacts_expiry) { saveContacts(); dirty_contacts_expiry = 0; }
+    return true;
+  }
+#endif
 
 #if ENV_INCLUDE_GPS == 1
   void applyGpsPrefs() {
@@ -241,6 +253,10 @@ private:
 
   DataStore* _store;
   NodePrefs _prefs;
+#ifdef MUZI_BASE_SUPERIO
+  bool _prefs_save_pending = false;
+  uint32_t _prefs_retry_at = 0;
+#endif
   uint32_t pending_login;
   uint32_t pending_status;
   uint32_t pending_telemetry, pending_discovery;   // pending _TELEMETRY_REQ

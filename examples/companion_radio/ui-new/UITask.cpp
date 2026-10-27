@@ -92,6 +92,9 @@ class HomeScreen : public UIScreen {
     RECENT,
     RADIO,
     BLUETOOTH,
+#ifdef MUZI_BASE_SUPERIO
+    SOUNDS,
+#endif
     ADVERT,
 #if ENV_INCLUDE_GPS == 1
     GPS,
@@ -134,6 +137,9 @@ class HomeScreen : public UIScreen {
     const int minMilliVolts = BATT_MIN_MILLIVOLTS;
     const int maxMilliVolts = BATT_MAX_MILLIVOLTS;
     int batteryPercentage = ((batteryMilliVolts - minMilliVolts) * 100) / (maxMilliVolts - minMilliVolts);
+#ifdef MUZI_BASE_SUPERIO
+    batteryPercentage = superbase::batteryPercent(batteryMilliVolts);
+#endif
     if (batteryPercentage < 0) batteryPercentage = 0; // Clamp to 0%
     if (batteryPercentage > 100) batteryPercentage = 100; // Clamp to 100%
 
@@ -157,11 +163,24 @@ class HomeScreen : public UIScreen {
     // while charging, show a bolt (or a plug once full) just left of the battery,
     // keeping the fill bar itself clean and uninterrupted
     bool charging = board.isExternalPowered();
+    bool status_slot_used = charging;
+#ifdef MUZI_BASE_SUPERIO
+    auto charge_state = board.getChargeState();
+    status_slot_used = charge_state != superbase::ChargeState::Battery;
+    charging = charge_state == superbase::ChargeState::Charging || charge_state == superbase::ChargeState::Idle;
+    if (superbase::chargeFault(charge_state)) {
+      display.setCursor(iconX - 9, iconY);
+      display.print("!");
+    }
+#endif
     if (charging) {
       // There's no charge-complete signal on most boards, so "full" is a high
       // voltage band rather than an exact 100% (a real pack rarely reads 4.2V).
       const int BATT_FULL_PCT = 95;
       const uint8_t* symbol = (batteryPercentage >= BATT_FULL_PCT) ? plug_icon : charging_icon;
+#ifdef MUZI_BASE_SUPERIO
+      symbol = charge_state == superbase::ChargeState::Charging ? charging_icon : plug_icon;
+#endif
       display.setColor(UIColor::title_txt);
       display.drawXbm(iconX - 9, iconY + 1, symbol, 8, 8);
     }
@@ -171,7 +190,7 @@ class HomeScreen : public UIScreen {
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
       display.setColor(UIColor::warning_txt);
-      display.drawXbm(iconX - (charging ? 18 : 9), iconY + 1, muted_icon, 8, 8);
+      display.drawXbm(iconX - (status_slot_used ? 18 : 9), iconY + 1, muted_icon, 8, 8);
     }
 #endif
   }
@@ -380,6 +399,14 @@ public:
       display.setColor(UIColor::secondary_txt);
       display.setTextSize(1);
       display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+#ifdef MUZI_BASE_SUPERIO
+    } else if (_page == HomePage::SOUNDS) {
+      display.setColor(UIColor::primary_txt);
+      display.setTextSize(1);
+      display.drawTextCentered(display.width()/2, 24, "Buzzer");
+      display.drawTextCentered(display.width()/2, 40, superbase::soundLabel(_node_prefs->superbase_buzzer_mode));
+      display.drawTextCentered(display.width()/2, 58, "press: change mode");
+#endif
     } else if (_page == HomePage::ADVERT) {
       display.setColor(UIColor::corp_blue);
       display.drawXbm((display.width() - 32) / 2, 18, advert_icon, 32, 32);
@@ -559,6 +586,9 @@ public:
   }
 
   bool handleInput(char c) override {
+#ifdef MUZI_BASE_SUPERIO
+    if (c == KEY_CANCEL) { _page = HomePage::FIRST; return true; }
+#endif
     if (c == KEY_LEFT || c == KEY_PREV) {
       _page = (_page + HomePage::Count - 1) % HomePage::Count;
       return true;
@@ -583,6 +613,12 @@ public:
       }
       return true;
     }
+#ifdef MUZI_BASE_SUPERIO
+    if (c == KEY_ENTER && _page == HomePage::SOUNDS) {
+      _task->toggleBuzzer();
+      return true;
+    }
+#endif
     if (c == KEY_ENTER && _page == HomePage::ADVERT) {
       _task->notify(UIEventType::ack);
       if (the_mesh.advert()) {
@@ -705,6 +741,7 @@ public:
   }
 
   bool handleInput(char c) override {
+    if (c == KEY_CANCEL) { _task->gotoHomeScreen(); return true; }
     if (c == KEY_NEXT || c == KEY_RIGHT) {
       head = (head + MAX_UNREAD_MSGS - 1) % MAX_UNREAD_MSGS;
       num_unread--;
@@ -729,6 +766,13 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
 #if defined(PIN_USER_BTN)
   user_btn.begin();
+#ifdef MUZI_BASE_SUPERIO
+  joystick_left.begin();
+  joystick_right.begin();
+  joystick_up.begin();
+  joystick_down.begin();
+  back_btn.begin();
+#endif
 #endif
 #if defined(PIN_USER_BTN_ANA)
   analog_btn.begin();
@@ -743,6 +787,14 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #ifdef PIN_BUZZER
   buzzer.begin();
   buzzer.quiet(_node_prefs->buzzer_quiet);
+#ifdef MUZI_BASE_SUPERIO
+  if (_node_prefs->buzzer_quiet && _node_prefs->superbase_buzzer_mode == superbase::All)
+    _node_prefs->superbase_buzzer_mode = superbase::Silent;
+  if (_node_prefs->superbase_buzzer_mode >= superbase::ModeCount)
+    _node_prefs->superbase_buzzer_mode = superbase::Silent;
+  buzzer.quiet(_node_prefs->superbase_buzzer_mode == superbase::Silent);
+  if (superbase::allowSound(_node_prefs->superbase_buzzer_mode, false))
+#endif
   buzzer.startup();
 #endif
 
@@ -751,6 +803,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #endif
 
   ui_started_at = millis();
+  _auto_off = millis() + AUTO_OFF_MILLIS;
   _alert_expiry = 0;
 
   splash = new SplashScreen(this);
@@ -760,12 +813,17 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 }
 
 void UITask::showAlert(const char* text, int duration_millis) {
-  strcpy(_alert, text);
+  StrHelper::strzcpy(_alert, text, sizeof(_alert));
   _alert_expiry = millis() + duration_millis;
+  if (_alert_expiry == 0) _alert_expiry = 1;
 }
 
 void UITask::notify(UIEventType t) {
 #if defined(PIN_BUZZER)
+#ifdef MUZI_BASE_SUPERIO
+  bool message = t == UIEventType::contactMessage || t == UIEventType::channelMessage || t == UIEventType::roomMessage || t == UIEventType::newContactMessage;
+  if (t != UIEventType::none && superbase::allowSound(_node_prefs->superbase_buzzer_mode, message, t == UIEventType::contactMessage)) {
+#endif
 switch(t){
   case UIEventType::contactMessage:
     // gemini's pick
@@ -783,6 +841,9 @@ switch(t){
   default:
     break;
 }
+#ifdef MUZI_BASE_SUPERIO
+  }
+#endif
 #endif
 
 #ifdef PIN_VIBRATION
@@ -811,14 +872,24 @@ void UITask::onMessageRecv(mesh::Packet *pkt, const ContactInfo &from, uint8_t t
     }
   }
 
+#ifdef MUZI_BASE_SUPERIO
+  notify(UIEventType::contactMessage);
+#else
   if (!hasConnection()) {
     notify(UIEventType::contactMessage);
   }
+#endif
 }
 
 void UITask::onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails& channel_details, const char* text) {
   uint8_t path_len = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
   ((MsgPreviewScreen *) msg_preview)->addPreview(path_len, channel_details.name, text);
+#ifdef MUZI_BASE_SUPERIO
+  if (_node_prefs->superbase_buzzer_mode == superbase::DirectOnly) {
+    notify(UIEventType::channelMessage);
+    return;
+  }
+#endif
   setCurrScreen(msg_preview);
 
   if (_display != NULL) {
@@ -831,9 +902,13 @@ void UITask::onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails& channel_det
     }
   }
 
+#ifdef MUZI_BASE_SUPERIO
+  notify(UIEventType::channelMessage);
+#else
   if (!hasConnection()) {
     notify(UIEventType::channelMessage);
   }
+#endif
 }
 
 void UITask::onQueueSizeChanged(int msgcount) {
@@ -894,9 +969,12 @@ void UITask::shutdown(bool restart){
      or we can set a flag and delay the shutdown for a couple of seconds
      while a non-blocking buzzer.loop() plays out in UITask::loop()
   */
+#ifdef MUZI_BASE_SUPERIO
+  if (superbase::allowSound(_node_prefs->superbase_buzzer_mode, false))
+#endif
   buzzer.shutdown();
   uint32_t buzzer_timer = millis(); // fail-safe shutdown
-  while (buzzer.isPlaying() && (millis() - 2500) < buzzer_timer)
+  while (buzzer.isPlaying() && uint32_t(millis() - buzzer_timer) < 2500)
     buzzer.loop();
 
   #endif // PIN_BUZZER
@@ -921,8 +999,31 @@ bool UITask::isButtonPressed() const {
 }
 
 void UITask::loop() {
+#ifdef MUZI_BASE_SUPERIO
+  if (_charge_state == 255 || uint32_t(millis() - _charge_checked_at) >= 1000) {
+    _charge_checked_at = millis();
+    auto state = board.getChargeState();
+    if (_charge_state != uint8_t(state)) {
+      if (superbase::chargeFault(state)) showAlert(state == superbase::ChargeState::RecoverableFault ? "Charging paused" : "Charger fault", 4000);
+      else if (strcmp(_alert, "Charging paused") == 0 || strcmp(_alert, "Charger fault") == 0) _alert_expiry = 0;
+      _charge_state = uint8_t(state);
+      _next_refresh = 0;
+    }
+  }
+#endif
   char c = 0;
 #if UI_HAS_JOYSTICK
+#ifdef MUZI_BASE_SUPERIO
+  SuperbaseButton* buttons[] = {&user_btn, &joystick_left, &joystick_right, &joystick_up, &joystick_down, &back_btn};
+  const char keys[] = {KEY_ENTER, char(KEY_LEFT), char(KEY_RIGHT), char(KEY_PREV), char(KEY_NEXT), KEY_CANCEL};
+  for (uint8_t i = 0; i < 6; i++) {
+    int event = buttons[i]->check();
+    if (event == BUTTON_EVENT_CLICK) c = checkDisplayOn(keys[i]);
+    if (event == BUTTON_EVENT_LONG_PRESS) c = handleLongPress(keys[i]);
+    if (event == BUTTON_EVENT_TRIPLE_CLICK && i == 5) c = handleTripleClick(KEY_SELECT);
+    if (event != BUTTON_EVENT_NONE) break;
+  }
+#else
   int ev = user_btn.check();
   if (ev == BUTTON_EVENT_CLICK) {
     c = checkDisplayOn(KEY_ENTER);
@@ -945,6 +1046,7 @@ void UITask::loop() {
   if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
     c = handleTripleClick(KEY_SELECT);
   }
+#endif
 #elif defined(PIN_USER_BTN)
   int ev = user_btn.check();
   #ifdef UI_HAS_NAV_INPUT
@@ -1021,10 +1123,10 @@ void UITask::loop() {
   if (curr) curr->poll();
 
   if (_display != NULL && _display->isOn()) {
-    if (millis() >= _next_refresh && curr) {
+    if ((_next_refresh == 0 || int32_t(millis() - _next_refresh) >= 0) && curr) {
       _display->startFrame();
       int delay_millis = curr->render(*_display);
-      if (millis() < _alert_expiry) {  // render alert popup
+      if (_alert_expiry && int32_t(millis() - _alert_expiry) < 0) {
         _display->setTextSize(1);
         int y = _display->height() / 3;
         int p = _display->height() / 32;
@@ -1037,6 +1139,15 @@ void UITask::loop() {
       } else {
         _next_refresh = millis() + delay_millis;
       }
+#ifdef MUZI_BASE_SUPERIO
+      if (superbase::chargeFault(static_cast<superbase::ChargeState>(_charge_state))) {
+        _display->setColor(UIColor::window_bkg);
+        _display->fillRect(0, _display->height() - 11, _display->width(), 11);
+        _display->setTextSize(1);
+        _display->setColor(UIColor::warning_txt);
+        _display->drawTextCentered(_display->width()/2, _display->height()-10, "! Check charger");
+      }
+#endif
       _display->endFrame();
     }
 #if AUTO_OFF_MILLIS > 0
@@ -1049,7 +1160,7 @@ void UITask::loop() {
       _auto_off = millis() + AUTO_OFF_MILLIS;
     }
 #endif
-    if (millis() > _auto_off) {
+    if (int32_t(millis() - _auto_off) >= 0) {
       _display->turnOff();
     }
 #endif
@@ -1154,6 +1265,16 @@ void UITask::toggleGPS() {
 void UITask::toggleBuzzer() {
     // Toggle buzzer quiet mode
   #ifdef PIN_BUZZER
+#ifdef MUZI_BASE_SUPERIO
+    _node_prefs->superbase_buzzer_mode = (_node_prefs->superbase_buzzer_mode + 1) % superbase::ModeCount;
+    buzzer.quiet(_node_prefs->superbase_buzzer_mode == superbase::Silent);
+    _node_prefs->buzzer_quiet = buzzer.isQuiet();
+    the_mesh.savePrefs();
+    char text[32];
+    snprintf(text, sizeof(text), "Buzzer: %s", superbase::soundLabel(_node_prefs->superbase_buzzer_mode));
+    showAlert(text, 1200);
+    _next_refresh = 0;
+#else
     if (buzzer.isQuiet()) {
       buzzer.quiet(false);
       notify(UIEventType::ack);
@@ -1164,5 +1285,20 @@ void UITask::toggleBuzzer() {
     the_mesh.savePrefs();
     showAlert(buzzer.isQuiet() ? "Buzzer: OFF" : "Buzzer: ON", 800);
     _next_refresh = 0;  // trigger refresh
+#endif
   #endif
 }
+
+#ifdef MUZI_BASE_SUPERIO
+void UITask::enableBluetooth() {
+  AbstractUITask::enableBluetooth();
+  _node_prefs->superbase_ble_enabled = 1;
+  the_mesh.savePrefs();
+}
+
+void UITask::disableBluetooth() {
+  AbstractUITask::disableBluetooth();
+  _node_prefs->superbase_ble_enabled = 0;
+  the_mesh.savePrefs();
+}
+#endif

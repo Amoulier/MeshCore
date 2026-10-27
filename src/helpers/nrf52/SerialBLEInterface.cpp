@@ -30,6 +30,10 @@ void SerialBLEInterface::onConnect(uint16_t connection_handle) {
     instance->_conn_handle = connection_handle;
     instance->_isDeviceConnected = false;
     instance->clearBuffers();
+#ifdef MUZI_BASE_SUPERIO
+    instance->_battery_delivery.disconnected();
+    instance->_battery_poll.clear();
+#endif
   }
 }
 
@@ -40,6 +44,9 @@ void SerialBLEInterface::onDisconnect(uint16_t connection_handle, uint8_t reason
       instance->_conn_handle = BLE_CONN_HANDLE_INVALID;
       instance->_isDeviceConnected = false;
       instance->clearBuffers();
+#ifdef MUZI_BASE_SUPERIO
+      instance->_battery_delivery.disconnected();
+#endif
     }
   }
 }
@@ -48,6 +55,7 @@ void SerialBLEInterface::onSecured(uint16_t connection_handle) {
   BLE_DEBUG_PRINTLN("SerialBLEInterface: onSecured handle=0x%04X", connection_handle);
   if (instance) {
     if (instance->isValidConnection(connection_handle, true)) {
+      if (!instance->_isEnabled) { instance->disconnect(); return; }
       instance->_isDeviceConnected = true;
       
       // Connection interval units: 1.25ms, supervision timeout units: 10ms
@@ -184,6 +192,10 @@ void SerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code
   bleuart.setPermission(SECMODE_ENC_WITH_MITM, SECMODE_ENC_WITH_MITM);
   bleuart.begin();
   bleuart.setRxCallback(onBleUartRX);
+#ifdef MUZI_BASE_SUPERIO
+  battery_service.setPermission(SECMODE_ENC_WITH_MITM, SECMODE_ENC_WITH_MITM);
+  battery_service.begin();
+#endif
 
 
 
@@ -274,8 +286,19 @@ void SerialBLEInterface::disable() {
   Bluefruit.Advertising.restartOnDisconnect(false);
   Bluefruit.Advertising.stop();
   disconnect();
+  _isDeviceConnected = false;
+  clearBuffers();
   _last_health_check = 0;
 }
+
+#ifdef MUZI_BASE_SUPERIO
+void SerialBLEInterface::loop() {
+  if (_battery_known && _battery_poll.ready(millis(), 1000)) {
+    _battery_poll.attempted(millis());
+    _battery_delivery.update(battery_service, _battery_percent, _isEnabled && isConnected(), _conn_handle);
+  }
+}
+#endif
 
 size_t SerialBLEInterface::writeFrame(const uint8_t src[], size_t len) {
   if (len > MAX_FRAME_SIZE) {

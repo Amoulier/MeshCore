@@ -2414,6 +2414,9 @@ void MyMesh::checkSerialInterface() {
 
 void MyMesh::loop() {
   BaseChatMesh::loop();
+#ifdef MUZI_BASE_SUPERIO
+  if (_prefs_save_pending && uint32_t(millis() - _prefs_retry_at) >= 5000) savePrefs();
+#endif
 
   if (_cli_rescue) {
     checkCLIRescueCmd();

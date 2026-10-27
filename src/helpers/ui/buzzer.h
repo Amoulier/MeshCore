@@ -34,4 +34,8 @@ class genericBuzzer
         const char *shutdown_song = "Shutdown:d=4,o=5,b=100:8g5,16e5,16c5";
 
         bool _is_quiet = true;
+#ifdef MUZI_BASE_SUPERIO
+        bool _owns_playback = false;
+        char _melody[128] = {};
+#endif
 };

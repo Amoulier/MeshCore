@@ -2,6 +2,10 @@
 #include <Wire.h>
 
 #include "MuziBaseBoard.h"
+#include <flash/flash_nrf5x.h>
+#ifdef MUZI_BASE_SUPERIO
+#include <ICM_20948.h>
+#endif
 
 #ifdef NRF52_POWER_MANAGEMENT
 const PowerMgtConfig power_config = {
@@ -43,6 +47,21 @@ void MuziBaseBoard::begin() {
   digitalWrite(SCREEN_12V_ENABLE, LOW);
 #endif
   Wire.begin();
+#ifdef MUZI_BASE_SUPERIO
+  // Companion does not consume compass data, so keep both sensors asleep.
+  Wire1.begin();
+  ICM_20948_I2C imu;
+  for (uint8_t ad0 = 0; ad0 < 2; ad0++) {
+    imu.begin(Wire1, ad0);
+    if (imu.status != ICM_20948_Stat_Ok) continue;
+    AK09916_CNTL2_Reg_t mode = {};
+    mode.MODE = AK09916_mode_power_down;
+    imu.writeMag(AK09916_REG_CNTL2, reinterpret_cast<uint8_t*>(&mode));
+    imu.sleep(true);
+    break;
+  }
+  Wire1.end();
+#endif
   // delay(1000); // wait for display to initialize. otherwise it doesn't come up on boot.
 
 #ifdef PIN_USER_BTN
@@ -61,4 +80,24 @@ void MuziBaseBoard::begin() {
 #ifdef NRF52_POWER_MANAGEMENT
   checkBootVoltage(&power_config);
 #endif
+}
+
+void MuziBaseBoard::shutdownPeripherals() {
+  NRF52Board::shutdownPeripherals();
+  noTone(BUZZER_PIN);
+  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(SCREEN_12V_ENABLE, LOW);
+  digitalWrite(PIN_GPS_EN, LOW);
+  flash_nrf5x_flush();
+}
+
+void MuziBaseBoard::reboot() {
+  if (prepareShutdown && !prepareShutdown()) return;
+  flash_nrf5x_flush();
+  NRF52Board::reboot();
+}
+
+void MuziBaseBoard::powerOff() {
+  if (prepareShutdown && !prepareShutdown()) return;
+  NRF52Board::powerOff();
 }

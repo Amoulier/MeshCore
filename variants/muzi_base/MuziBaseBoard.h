@@ -3,6 +3,7 @@
 #include <MeshCore.h>
 #include <Arduino.h>
 #include <helpers/NRF52Board.h>
+#include <helpers/ui/SuperbaseSupport.h>
 
 // The Muzi Base PCB ships in two radio flavors. Keep the user-facing identity
 // (OTA/DFU name and reported manufacturer) distinct per radio even though the
@@ -22,8 +23,15 @@ protected:
 #endif
 
 public:
+  bool (*prepareShutdown)() = nullptr;
   MuziBaseBoard() : NRF52Board(MUZI_BASE_OTA_NAME) {}
   void begin();
+  superbase::ChargeState getChargeState() {
+    return superbase::chargeState(isExternalPowered(), digitalRead(PIN_CHARGER_FAULT), digitalRead(PIN_BATTERY_CHARGING));
+  }
+  void shutdownPeripherals() override;
+  void reboot() override;
+  void powerOff() override;
 
   #define BATTERY_SAMPLES 8
 

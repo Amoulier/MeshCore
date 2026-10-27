@@ -9,7 +9,18 @@ permissions:
   contents: read
 
 jobs:
+  regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Test SuperBase failure and recovery paths
+        run: python test/superbase/run.py --sanitize
+
   build:
+    needs: regressions
     runs-on: ubuntu-latest
     steps:
       - name: Clone repository
@@ -20,7 +31,7 @@ jobs:
 
       - name: Build SuperBase firmware
         env:
-          FIRMWARE_VERSION: sb-ble
+          FIRMWARE_VERSION: v1.18-sb1
           DISABLE_DEBUG: '1'
         run: bash build.sh build-firmware muzi_base_uno_superIO_companion_radio_ble
 
@@ -29,6 +40,13 @@ jobs:
         run: |
           test -n "$(find . -maxdepth 1 -name '*.uf2' -print -quit)"
           sha256sum *.uf2 *.zip > SHA256SUMS.txt
+
+      - name: Verify SuperBase firmware package
+        run: >-
+          python bin/audit-superbase-package.py
+          .pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.uf2
+          .pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.zip
+          --version v1.18-sb1 --report out/validation.json
 
       - name: Upload firmware
         uses: actions/upload-artifact@v7

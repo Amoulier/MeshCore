@@ -21,11 +21,14 @@
 
 #ifdef MUZI_BASE_SUPERIO
   #include <helpers/ui/SH1107Display.h>
+  #include "SuperbaseButton.h"
   extern DISPLAY_CLASS display;
-  extern MomentaryButton user_btn;
-  extern MomentaryButton joystick_left;
-  extern MomentaryButton joystick_right;
-  extern MomentaryButton back_btn;
+  extern SuperbaseButton user_btn;
+  extern SuperbaseButton joystick_left;
+  extern SuperbaseButton joystick_right;
+  extern SuperbaseButton joystick_up;
+  extern SuperbaseButton joystick_down;
+  extern SuperbaseButton back_btn;
 #elif defined(DISPLAY_CLASS)
   #include "helpers/ui/NullDisplayDriver.h"
   extern DISPLAY_CLASS display;
@@ -45,6 +48,7 @@ class MuziBaseSensorManager : public EnvironmentSensorManager {
 #if ENV_INCLUDE_GPS
   int _last_gps_sw = -1;
   unsigned long _next_sw_check = 0;
+  bool _software_gps_enabled = false;
 #endif
 public:
 #if ENV_INCLUDE_GPS
@@ -54,6 +58,9 @@ public:
 #endif
   bool begin() override;
   void loop() override;
+#if ENV_INCLUDE_GPS
+  bool setSettingValue(const char* name, const char* value) override;
+#endif
 };
 extern MuziBaseSensorManager sensors;
 

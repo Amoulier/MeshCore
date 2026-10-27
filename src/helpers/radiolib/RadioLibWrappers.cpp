@@ -72,6 +72,9 @@ void RadioLibWrapper::doResetAGC() {
 }
 
 void RadioLibWrapper::resetAGC() {
+#ifdef MUZI_BASE_SUPERIO
+  if ((state & ~STATE_INT_READY) == STATE_TX_WAIT) return;
+#endif
   // make sure we're not mid-receive of packet!
   if ((state & STATE_INT_READY) != 0 || isReceivingPacket()) return;
 
@@ -110,13 +113,30 @@ void RadioLibWrapper::loop() {
 }
 
 void RadioLibWrapper::startRecv() {
+#ifdef MUZI_BASE_SUPERIO
+  if ((state & ~STATE_INT_READY) == STATE_TX_WAIT) return;
+  if (_rx_failures && !_rx_retry.ready(millis(), 1000)) return;
+  _rx_retry.attempted(millis());
+  if (_rx_failures >= 3) {
+    if (!recoverReceive()) return;
+    _radio->setPacketReceivedAction(setFlag);
+  }
+#endif
   #if defined(USE_LR2021)
   _radio->standby(); // without this LR2021 can throw -706 when calling startReceive after hardware CAD when side detectors are enabled
   #endif
   int err = _radio->startReceive();
   if (err == RADIOLIB_ERR_NONE) {
     state = STATE_RX;
+#ifdef MUZI_BASE_SUPERIO
+    _rx_failures = 0;
+    _rx_retry.clear();
+#endif
   } else {
+#ifdef MUZI_BASE_SUPERIO
+    state = STATE_IDLE;
+    if (_rx_failures < 255) _rx_failures++;
+#endif
     MESH_DEBUG_PRINTLN("RadioLibWrapper: error: startReceive(%d)", err);
   }
 }
@@ -126,6 +146,9 @@ bool RadioLibWrapper::isInRecvMode() const {
 }
 
 int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
+#ifdef MUZI_BASE_SUPERIO
+  if ((state & ~STATE_INT_READY) == STATE_TX_WAIT) return 0;
+#endif
   int len = 0;
   if (state & STATE_INT_READY) {
     len = _radio->getPacketLength();
@@ -149,12 +172,16 @@ int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
   }
 
   if (state != STATE_RX) {
+#ifdef MUZI_BASE_SUPERIO
+    startRecv();
+#else
     int err = _radio->startReceive();
     if (err == RADIOLIB_ERR_NONE) {
       state = STATE_RX;
     } else {
       MESH_DEBUG_PRINTLN("RadioLibWrapper: error: startReceive(%d)", err);
     }
+#endif
   }
   return len;
 }
@@ -164,6 +191,9 @@ uint32_t RadioLibWrapper::getEstAirtimeFor(int len_bytes) {
 }
 
 bool RadioLibWrapper::startSendRaw(const uint8_t* bytes, int len) {
+#ifdef MUZI_BASE_SUPERIO
+  if ((state & ~STATE_INT_READY) == STATE_TX_WAIT) return false;
+#endif
   _board->onBeforeTransmit();
   int err = _radio->startTransmit((uint8_t *) bytes, len);
   if (err == RADIOLIB_ERR_NONE) {
@@ -196,6 +226,9 @@ int16_t RadioLibWrapper::performChannelScan() {
 }
 
 bool RadioLibWrapper::isChannelActive() {
+#ifdef MUZI_BASE_SUPERIO
+  if ((state & ~STATE_INT_READY) == STATE_TX_WAIT) return true;
+#endif
   // int.thresh: RSSI-based interference detection (relative to noise floor)
   if (_threshold != 0 && getCurrentRSSI() > _noise_floor + _threshold) return true;
 

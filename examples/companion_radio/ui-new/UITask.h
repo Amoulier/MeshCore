@@ -57,11 +57,15 @@ class UITask : public AbstractUITask {
 #endif
   unsigned long _next_refresh, _auto_off;
   NodePrefs* _node_prefs;
-  char _alert[80];
+  char _alert[80] = {};
   unsigned long _alert_expiry;
   int _msgcount;
   unsigned long ui_started_at, next_batt_chck;
   int next_backlight_btn_check = 0;
+#ifdef MUZI_BASE_SUPERIO
+  uint8_t _charge_state = 255;
+  uint32_t _charge_checked_at = 0;
+#endif
 #ifdef PIN_STATUS_LED
   int led_state = 0;
   int next_led_change = 0;
@@ -111,6 +115,10 @@ public:
   }
 
   void toggleBuzzer();
+#ifdef MUZI_BASE_SUPERIO
+  void enableBluetooth();
+  void disableBluetooth();
+#endif
   bool getGPSState();
   void toggleGPS();
 

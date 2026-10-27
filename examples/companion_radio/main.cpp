@@ -1,6 +1,10 @@
 #include <Arduino.h>   // needed for PlatformIO
 #include <Mesh.h>
 #include "MyMesh.h"
+#ifdef MUZI_BASE_SUPERIO
+#include "SuperbaseDFU.h"
+#include <flash/flash_nrf5x.h>
+#endif
 
 // Believe it or not, this std C function is busted on some platforms!
 static uint32_t _atoi(const char* sp) {
@@ -275,6 +279,10 @@ void setup() {
 #endif
 
   the_mesh.startInterface(interface_manager);
+#ifdef MUZI_BASE_SUPERIO
+  board.prepareShutdown = []() { return the_mesh.prepareForShutdown(); };
+  if (!the_mesh.getNodePrefs()->superbase_ble_enabled) interface_manager.disableBluetooth();
+#endif
   sensors.begin();
 
 #if ENV_INCLUDE_GPS == 1
@@ -290,8 +298,28 @@ void setup() {
 }
 
 void loop() {
+#ifdef MUZI_BASE_SUPERIO
+  if (superbase_dfu_state != SuperbaseDfuState::Running) {
+    if (superbase_dfu_state == SuperbaseDfuState::Requested) {
+      bool saved = the_mesh.prepareForShutdown();
+      if (saved) flash_nrf5x_flush();
+      if (superbase_dfu_state == SuperbaseDfuState::Requested)
+        superbase_dfu_state = saved ? SuperbaseDfuState::Ready : SuperbaseDfuState::Rejected;
+    }
+    return;
+  }
+#endif
   the_mesh.loop();
   interface_manager.loop();
+#if defined(MUZI_BASE_SUPERIO) && defined(BLE_PIN_CODE)
+  static uint32_t battery_sample_at = 0;
+  static bool battery_sampled = false;
+  if (!battery_sampled || uint32_t(millis() - battery_sample_at) >= 8000) {
+    battery_sampled = true;
+    battery_sample_at = millis();
+    bluetooth_interface.updateBattery(board.getBattMilliVolts());
+  }
+#endif
   sensors.loop();
 #ifdef DISPLAY_CLASS
   ui_task.loop();

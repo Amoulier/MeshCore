@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include "DataStore.h"
+#ifdef MUZI_BASE_SUPERIO
+#include <helpers/ui/SuperbaseSupport.h>
+#endif
 
 #if defined(EXTRAFS) || defined(QSPIFLASH)
   #define MAX_BLOBRECS 100
@@ -247,6 +250,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs) {
 }
 
 bool DataStore::savePrefs(NodePrefs& _prefs) {
+#ifdef MUZI_BASE_SUPERIO
+  return superbase::savePreferences(*_fs, _prefs, FILE_O_WRITE);
+#else
   File file = openWrite(_fs, "/prefs.json");
   if (file) {
     bool success = _prefs.saveSerial(file);
@@ -254,6 +260,7 @@ bool DataStore::savePrefs(NodePrefs& _prefs) {
     return success;
   }
   return false;
+#endif
 }
 
 void DataStore::loadContacts(DataStoreHost* host) {

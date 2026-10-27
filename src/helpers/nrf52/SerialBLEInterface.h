@@ -2,14 +2,29 @@
 
 #include "../BaseSerialInterface.h"
 #include <bluefruit.h>
+#ifdef MUZI_BASE_SUPERIO
+#include <helpers/ui/SuperbaseSupport.h>
+#include "SuperbaseDFU.h"
+#endif
 
 #ifndef BLE_TX_POWER
 #define BLE_TX_POWER 4
 #endif
 
 class SerialBLEInterface : public BaseSerialInterface {
+#ifdef MUZI_BASE_SUPERIO
+  SuperbaseDFU bledfu;
+#else
   BLEDfu bledfu;
+#endif
   BLEUart bleuart;
+#ifdef MUZI_BASE_SUPERIO
+  BLEBas battery_service;
+  superbase::BatteryDelivery _battery_delivery;
+  superbase::RetryTimer _battery_poll;
+  uint8_t _battery_percent = 0;
+  bool _battery_known = false;
+#endif
   bool _isEnabled;
   bool _isDeviceConnected;
   uint16_t _conn_handle;
@@ -60,6 +75,13 @@ public:
    * @param pin_code   the BLE security pin
    */
   void begin(const char* prefix, char* name, uint32_t pin_code);
+#ifdef MUZI_BASE_SUPERIO
+  void updateBattery(uint16_t millivolts) {
+    _battery_percent = superbase::batteryPercent(millivolts);
+    _battery_known = millivolts > 1000;
+  }
+  void loop() override;
+#endif
 
   void disconnect();
   void enable() override;

@@ -2,6 +2,9 @@
 
 #include <Mesh.h>
 #include <RadioLib.h>
+#ifdef MUZI_BASE_SUPERIO
+#include <helpers/ui/SuperbaseSupport.h>
+#endif
 
 #ifdef USE_CC310_HW_CRYPTO
 #include <Adafruit_nRFCrypto.h>
@@ -21,6 +24,11 @@ protected:
   uint16_t _num_floor_samples;
   int32_t _floor_sample_sum;
   uint8_t _preamble_sf;
+#ifdef MUZI_BASE_SUPERIO
+  superbase::RetryTimer _rx_retry;
+  uint8_t _rx_failures = 0;
+  virtual bool recoverReceive() { return false; }
+#endif
 
   void idle();
   void startRecv();
@@ -29,7 +37,7 @@ protected:
   virtual void doResetAGC();
 
 public:
-  RadioLibWrapper(PhysicalLayer& radio, mesh::MainBoard& board) : _radio(&radio), _board(&board), _preamble_sf(0) { n_recv = n_sent = 0; }
+  RadioLibWrapper(PhysicalLayer& radio, mesh::MainBoard& board) : _radio(&radio), _board(&board), _preamble_sf(0) { n_recv = n_sent = n_recv_errors = 0; }
 
   void begin() override;
   virtual void powerOff() { _radio->sleep(); }
@@ -49,7 +57,7 @@ public:
 
   virtual void setParams(float freq, float bw, uint8_t sf, uint8_t cr) = 0;
   uint32_t getRngSeed();
-  void setTxPower(int8_t dbm);
+  virtual void setTxPower(int8_t dbm);
 
   virtual float getCurrentRSSI() =0;
   virtual uint8_t getSpreadingFactor() const { return LORA_SF; }

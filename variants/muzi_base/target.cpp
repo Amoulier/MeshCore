@@ -42,7 +42,7 @@ bool MuziBaseSensorManager::begin() {
 #if ENV_INCLUDE_GPS
   pinMode(PIN_GPS_SWITCH, INPUT);
   _last_gps_sw = digitalRead(PIN_GPS_SWITCH);   // initial gps state from the switch
-  if (_last_gps_sw == HIGH) start_gps(); else stop_gps();
+  if (gps_active) stop_gps();
 #endif
   return ok;
 }
@@ -57,24 +57,46 @@ void MuziBaseSensorManager::loop() {
   }
 #if ENV_INCLUDE_GPS
   unsigned long now = millis();
-  if (now > _next_sw_check) {   // check the mode switch ~once a sec
-    _next_sw_check = now + 1000;
+  if (uint32_t(now - _next_sw_check) >= 200) {
+    _next_sw_check = now;
     int sw = digitalRead(PIN_GPS_SWITCH);
     if (sw != _last_gps_sw) {
       _last_gps_sw = sw;
-      if (sw == HIGH) start_gps(); else stop_gps();
+      bool enabled = sw == HIGH && _software_gps_enabled;
+      if (enabled && !gps_active) start_gps();
+      if (!enabled && gps_active) stop_gps();
     }
   }
 #endif
   EnvironmentSensorManager::loop();
 }
 
+#if ENV_INCLUDE_GPS
+bool MuziBaseSensorManager::setSettingValue(const char* name, const char* value) {
+  if (strcmp(name, "gps") != 0) return EnvironmentSensorManager::setSettingValue(name, value);
+  _software_gps_enabled = strcmp(value, "1") == 0;
+  bool enabled = _software_gps_enabled && digitalRead(PIN_GPS_SWITCH) == HIGH;
+  if (enabled && !gps_active) start_gps();
+  if (!enabled && gps_active) stop_gps();
+  return true;
+}
+#endif
+
 #ifdef DISPLAY_CLASS
   DISPLAY_CLASS display;
+#ifdef MUZI_BASE_SUPERIO
+  SuperbaseButton user_btn(0, PIN_USER_BTN);
+  SuperbaseButton joystick_left(1, JOYSTICK_LEFT);
+  SuperbaseButton joystick_right(2, JOYSTICK_RIGHT);
+  SuperbaseButton joystick_up(3, JOYSTICK_UP);
+  SuperbaseButton joystick_down(4, JOYSTICK_DOWN);
+  SuperbaseButton back_btn(5, PIN_BACK_BTN, 1000, true);
+#else
   MomentaryButton user_btn(PIN_USER_BTN, 1000, true, false, false);
   MomentaryButton joystick_left(JOYSTICK_LEFT, 1000, true, false, false);
   MomentaryButton joystick_right(JOYSTICK_RIGHT, 1000, true, false, false);
   MomentaryButton back_btn(PIN_BACK_BTN, 1000, true, false, true);
+#endif
 #endif
 
 #if defined(USE_LR1121)
