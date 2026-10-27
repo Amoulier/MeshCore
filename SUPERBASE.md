@@ -29,6 +29,8 @@ El archivo instalable queda en:
 
 También puedes usar `pio run` para compilar únicamente el perfil predeterminado.
 
+Esta rama también corrige la generación UF2 en carpetas con espacios y propaga los errores de conversión a PlatformIO.
+
 ## Compilar en GitHub
 
 El flujo **Build SuperBase Companion BLE** está configurado para compilar este perfil al subir cambios a esta rama. Incluye un disparador manual para cuando el flujo esté disponible en la rama predeterminada del fork. El artefacto descargable contiene el UF2 y el ZIP DFU generados por el proceso oficial `build.sh`, junto con sus sumas SHA-256. El ZIP descargado desde Actions es un contenedor: extráelo para obtener el UF2.
@@ -45,6 +47,8 @@ El flujo **Build SuperBase Companion BLE** está configurado para compilar este 
 Si no aparece la unidad del cargador, consulta la [documentación del fabricante](https://muzi.works/pages/resources) antes de intentar cambiar el bootloader.
 
 ## Alcance de la validación
+
+Validación local completada el 27 de octubre de 2026 en Windows: compilación del perfil, generación UF2 desde una ruta con espacios y comprobación de propagación de errores de conversión. Uso de RAM: 146856 / 248832 bytes (59.0 %). Uso de flash: 347648 / 708608 bytes (49.1 %).
 
 La compilación comprueba que el firmware se puede generar para el perfil seleccionado. El funcionamiento físico de radio, Bluetooth, pantalla, batería, GPS y buzzer requiere probarlo en un SuperBase real.
 
