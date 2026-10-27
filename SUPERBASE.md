@@ -72,6 +72,8 @@ Si no aparece la unidad del cargador, consulta la [documentación del fabricante
 
 ## Alcance de la validación
 
+**v1.18-sb2** corrige una omisión de v1.18-sb1: la entrada STAT1 del cargador necesitaba `INPUT_PULLUP`. Al dejarla flotante podía aparecer `! Check charger` sin un fallo real. Se restauró la configuración eléctrica utilizada por nuestro fork de Meshtastic y se añadió una regresión de entrada de drenador abierto: reproduce el aviso falso sin pull-up y comprueba carga, reposo y fallos reales con pull-up. Compilación, regresiones Windows y Linux/WSL con AddressSanitizer/UBSan aprobadas. RAM: 147872 bytes; flash: 361280 bytes. Falta confirmar en el nodo físico si ésta era la causa de su aviso.
+
 Validación local del 27 de octubre de 2026, versión **v1.18-sb1**: compilación del perfil y regresiones de producción en Windows y Linux/WSL para fallos del servicio BAS, estados del cargador, políticas y propiedad del audio, fallos de guardado, pulsaciones breves/rebotes/desbordamiento del reloj, recuperación RX, protección TX y espera/rechazo de DFU. Ejecución: `python test/superbase/run.py` con g++ instalado; Linux también pasó con `--sanitize` (AddressSanitizer y UBSan). La generación UF2 desde rutas con espacios y la propagación de errores de conversión también se comprobaron.
 
 Uso de RAM: 147872 / 248832 bytes (59.4 %). Uso de flash: 361264 / 708608 bytes (51.0 %). La auditoría `bin/audit-superbase-package.py` comprobó familia nRF52840, límites de flash de aplicación, vectores de arranque, versión, CRC16, requisito SoftDevice y coincidencia de los datos de aplicación entre UF2 y ZIP DFU.

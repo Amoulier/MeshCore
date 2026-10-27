@@ -28,8 +28,7 @@ void MuziBaseBoard::initiateShutdown(uint8_t reason) {
 void MuziBaseBoard::begin() {
   NRF52BoardDCDC::begin();
   pinMode(PIN_VBAT_READ, INPUT);
-  pinMode(PIN_BATTERY_CHARGING, INPUT);
-  pinMode(PIN_CHARGER_FAULT, INPUT);
+  _charger.begin();
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
   // output latches default to HIGH, so pull these low right after enabling

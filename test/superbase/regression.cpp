@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include <helpers/ui/SuperbaseSupport.h>
+#include <helpers/ui/BQ25185Inputs.h>
 #include <helpers/radiolib/RadioLibWrappers.h>
 #include "SuperbaseButton.h"
 #include <helpers/ui/buzzer.h>
@@ -94,6 +95,26 @@ void policyTests() {
   assert(!timer.ready(999, 1000) && timer.ready(1000, 1000));
   timer.attempted(UINT32_MAX - 500);
   assert(!timer.ready(100, 1000) && timer.ready(500, 1000));
+}
+
+void chargerInputTests() {
+  using namespace superbase;
+  BQ25185Inputs charger(27, 34);
+  mock_open_drain[27] = true;
+  mock_pins[27] = HIGH; // Released fault output, with no external pull-up.
+  mock_pins[34] = LOW;  // Charging.
+  pinMode(27, INPUT);
+  assert(charger.read(true) == ChargeState::LatchedFault);
+  charger.begin();
+  assert(charger.read(true) == ChargeState::Charging);
+  mock_pins[34] = HIGH;
+  assert(charger.read(true) == ChargeState::Idle);
+  mock_pins[27] = LOW; // Real fault must win over the weak pull-up.
+  assert(charger.read(true) == ChargeState::RecoverableFault);
+  mock_pins[34] = LOW;
+  assert(charger.read(true) == ChargeState::LatchedFault);
+  assert(charger.read(false) == ChargeState::Battery);
+  mock_open_drain[27] = false;
 }
 
 void persistenceTests() {
@@ -215,6 +236,6 @@ void dfuTests() {
 }
 
 int main() {
-  batteryTests(); policyTests(); persistenceTests(); buttonTests(); radioTests(); soundTests(); dfuTests();
+  batteryTests(); policyTests(); chargerInputTests(); persistenceTests(); buttonTests(); radioTests(); soundTests(); dfuTests();
   std::cout << "PASS: battery delivery, charger, audio ownership/policy, safe preferences, navigation, RX recovery, TX protection and DFU gating\n";
 }
