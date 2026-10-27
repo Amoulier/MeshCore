@@ -31,7 +31,7 @@ También puedes usar `pio run` para compilar únicamente el perfil predeterminad
 
 ## Compilar en GitHub
 
-El flujo **Build SuperBase Companion BLE** compila este perfil al subir cambios a esta rama y puede ejecutarse manualmente desde Actions. El artefacto descargable contiene el UF2 y el ZIP DFU generados por el proceso oficial `build.sh`, junto con sus sumas SHA-256. El ZIP descargado desde Actions es un contenedor: extráelo para obtener el UF2.
+El flujo **Build SuperBase Companion BLE** está configurado para compilar este perfil al subir cambios a esta rama. Incluye un disparador manual para cuando el flujo esté disponible en la rama predeterminada del fork. El artefacto descargable contiene el UF2 y el ZIP DFU generados por el proceso oficial `build.sh`, junto con sus sumas SHA-256. El ZIP descargado desde Actions es un contenedor: extráelo para obtener el UF2.
 
 ## Instalar y conectar
 
