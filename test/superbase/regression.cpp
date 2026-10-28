@@ -93,6 +93,16 @@ void batteryTests() {
 
 void policyTests() {
   using namespace superbase;
+  const uint8_t sc_enabled[] = {2,0}, sc_disabled[] = {0,0}, invalid_cccd[] = {3,0};
+  assert(serviceChangedCccdWrite(18,13,0,2,sc_enabled));
+  assert(serviceChangedCccdWrite(18,13,0,2,sc_disabled));
+  assert(!serviceChangedCccdWrite(18,13,0,2,invalid_cccd));
+  assert(!serviceChangedCccdWrite(18,13,0,2,nullptr));
+  assert(!serviceChangedCccdWrite(0,0,0,2,sc_enabled));
+  assert(!serviceChangedCccdWrite(18,13,1,2,sc_enabled));
+  assert(!serviceChangedCccdWrite(18,13,0,1,sc_enabled));
+  for (uint16_t other : {uint16_t(19),uint16_t(24),uint16_t(33),uint16_t(37)})
+    assert(!serviceChangedCccdWrite(18,other,0,2,sc_enabled));
   for (int s1 = 0; s1 < 2; s1++) for (int s2 = 0; s2 < 2; s2++)
     assert(chargeState(false, s1, s2) == ChargeState::Battery);
   assert(chargeState(true, 1, 0) == ChargeState::Charging);

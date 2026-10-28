@@ -22,6 +22,16 @@ inline uint8_t batteryPercent(int millivolts) {
   return (millivolts - 3000) * 100 / 1200;
 }
 
+// S140 6.1.1 places Service Changed's CCCD just before the first user
+// service. The SuperBase registers Legacy DFU first (control = service + 4).
+// Reject other descriptors, partial writes and unsupported CCCD values.
+inline bool serviceChangedCccdWrite(uint16_t dfuControl, uint16_t writtenHandle,
+                                   uint16_t offset, uint16_t length, const uint8_t* data) {
+  return dfuControl >= 6 && writtenHandle == dfuControl - 5 &&
+    offset == 0 && length == 2 && data && data[1] == 0 &&
+    (data[0] == 0 || data[0] == 2);
+}
+
 enum BuzzerMode : uint8_t { All, Silent, Notifications, System, DirectOnly, ModeCount };
 
 inline bool allowSound(uint8_t mode, bool message, bool direct = false) {

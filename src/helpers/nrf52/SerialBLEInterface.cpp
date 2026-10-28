@@ -31,6 +31,7 @@ void SerialBLEInterface::onConnect(uint16_t connection_handle) {
     instance->_isDeviceConnected = false;
     instance->clearBuffers();
 #ifdef MUZI_BASE_SUPERIO
+    superbase_service_changed_status = UINT32_MAX;
     instance->_battery_delivery.disconnected();
     instance->_battery_poll.clear();
     instance->_battery_subscription_pending.store(false);
@@ -67,8 +68,9 @@ void SerialBLEInterface::onSecured(uint16_t connection_handle) {
       // bonded clients to rediscover instead of using handles from older builds.
       // S140 rejects ranges that start in its GAP/GATT system attributes.
       // DFU is first: service, packet declaration/value, control declaration/value.
-      superbase_service_changed_status = sd_ble_gatts_service_changed(connection_handle,
-        superbase_dfu_control_handle - 4, superbase_gatt_last_handle);
+      if (superbase_service_changed_status != NRF_SUCCESS)
+        superbase_service_changed_status = sd_ble_gatts_service_changed(connection_handle,
+          superbase_dfu_control_handle - 4, superbase_gatt_last_handle);
 #endif
       
       // Connection interval units: 1.25ms, supervision timeout units: 10ms
@@ -124,6 +126,28 @@ void SerialBLEInterface::onBLEEvent(ble_evt_t* evt) {
 #ifdef MUZI_BASE_SUPERIO
   if (evt->header.evt_id == BLE_GATTS_EVT_SC_CONFIRM)
     SuperbaseBondedDFU::serviceChangedConfirmed(evt->evt.gatts_evt.conn_handle);
+  if (evt->header.evt_id == BLE_GATTS_EVT_WRITE) {
+    const uint16_t handle = evt->evt.gatts_evt.conn_handle;
+    const auto& write = evt->evt.gatts_evt.params.write;
+    if (instance->isValidConnection(handle) &&
+        superbase::serviceChangedCccdWrite(superbase_dfu_control_handle, write.handle,
+                                         write.offset, write.len, write.data)) {
+      BLEConnection* connection = Bluefruit.Connection(handle);
+      if (connection && connection->secured() && connection->bonded()) {
+        // Bluefruit saves only descriptors belonging to registered application
+        // characteristics. This system CCCD needs its own persistence hook.
+        connection->saveCccd();
+        if (write.data[0] == BLE_GATT_HVX_INDICATION &&
+            superbase_service_changed_status != NRF_SUCCESS &&
+            superbase_dfu_state == SuperbaseDfuState::Running) {
+          // A bonded client may enable this only after its first cached service
+          // discovery. Retry now instead of relying solely on onSecured().
+          superbase_service_changed_status = sd_ble_gatts_service_changed(handle,
+            superbase_dfu_control_handle - 4, superbase_gatt_last_handle);
+        }
+      }
+    }
+  }
 #endif
   
   if (evt->header.evt_id == BLE_GAP_EVT_CONN_PARAM_UPDATE_REQUEST) {
