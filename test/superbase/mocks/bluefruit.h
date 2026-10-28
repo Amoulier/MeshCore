@@ -40,9 +40,13 @@ inline std::vector<uint8_t> mock_indication;
 inline int mock_indications = 0, mock_service_begins = 0;
 inline int mock_sc_result = 0;
 inline bool mock_sc_confirm = true;
+inline int mock_sc_calls = 0;
 inline void (*mock_sc_confirm_cb)(uint16_t) = nullptr;
 inline int sd_ble_gatts_service_changed(uint16_t handle, uint16_t first, uint16_t last) {
   assert(first == 14 && last == 39);
+  // Cache invalidation must follow the acknowledged buttonless response.
+  assert(mock_indicate_ok && mock_indication==std::vector<uint8_t>({0x20,1,1}));
+  ++mock_sc_calls;
   if (mock_sc_result == NRF_SUCCESS && mock_sc_confirm && mock_sc_confirm_cb) mock_sc_confirm_cb(handle);
   return mock_sc_result;
 }

@@ -55,6 +55,7 @@ jobs:
           binary = Path('.pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.elf').read_bytes()
           assert b'superbaseDiagnosticCommand' not in binary
           assert b'diag build' not in binary
+          assert b'SBDFU auth' not in binary
           config = Path('variants/muzi_base/platformio.ini').read_text()
           assert 'SUPERBASE_USB_DIAGNOSTICS' not in config and 'SUPERBASE_DEBUG' not in config
           record = {'version':'v1.18-sb2-rc1', 'source_commit':os.environ['GITHUB_SHA'],

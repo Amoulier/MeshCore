@@ -63,16 +63,17 @@ int main() {
   Bluefruit.peer.active=true;
 
   send(); superbase_dfu_state=SuperbaseDfuState::Ready; mock_indicate_ok=false;
-  SuperbaseBondedDFU::loop(); assert(jumps==0 && mock_usb_prepare_calls==0);
+  const int prior_sc=mock_sc_calls;
+  SuperbaseBondedDFU::loop(); assert(jumps==0 && mock_usb_prepare_calls==0 && mock_sc_calls==prior_sc);
   mock_indicate_ok=true;
   send(); superbase_dfu_state=SuperbaseDfuState::Ready; mock_sc_result=1;
   SuperbaseBondedDFU::loop(); assert(jumps==0 && mock_usb_prepare_calls==0);
-  assert(mock_indication==std::vector<uint8_t>({0x20,1,4}));
+  assert(mock_indication==std::vector<uint8_t>({0x20,1,1}));
   mock_sc_result=0;
   send(); superbase_dfu_state=SuperbaseDfuState::Ready; mock_sc_confirm=false;
   const uint32_t before=millis();
   SuperbaseBondedDFU::loop(); assert(jumps==0 && mock_usb_prepare_calls==0 && millis()-before>=1000);
-  assert(mock_indication==std::vector<uint8_t>({0x20,1,4}));
+  assert(mock_indication==std::vector<uint8_t>({0x20,1,1}));
   mock_sc_confirm=true;
   send(); superbase_dfu_state=SuperbaseDfuState::Ready; mock_usb_prepare_ok=false;
   SuperbaseBondedDFU::loop(); assert(jumps==0 && mock_usb_prepare_calls==1);

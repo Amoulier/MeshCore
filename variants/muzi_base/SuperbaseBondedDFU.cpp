@@ -80,8 +80,14 @@ void SuperbaseBondedDFU::process() {
   const bool saved = superbase_dfu_state == SuperbaseDfuState::Ready;
   SB_DFU_TRACE("SBDFU process saved=%u conn=%u\n", saved, handle);
   const bool trusted = trustedConnection(handle);
+  const uint8_t response[] = {0x20, 0x01, uint8_t(saved ? 0x01 : 0x04)};
+  // Complete this response before invalidating its characteristic handle.
+  // Android starts rediscovery immediately upon Service Changed; an indication
+  // sent afterwards can be lost while the client replaces its service table.
+  const bool indicated = trusted && _control.indicate(handle, response, sizeof(response));
+  SB_DFU_TRACE("SBDFU response confirmed=%u status=%u\n", indicated, response[2]);
   bool cacheReady = false;
-  if (trusted && saved) {
+  if (indicated && saved) {
     // The installed Legacy loader cannot invalidate the application's larger
     // GATT table reliably. Clear that cache while this application still owns
     // the valid handles; wait for the peer's confirmation without removing its bond.
@@ -101,12 +107,6 @@ void SuperbaseBondedDFU::process() {
       }
     }
   }
-  const uint8_t response[] = {0x20, 0x01, uint8_t(saved && cacheReady ? 0x01 : 0x04)};
-  // Confirm cache invalidation before promising a jump to the updater.
-  // Indications wait for HVC: run on the application task, never the BLE callback.
-  SB_DFU_TRACE("SBDFU indicate begin trusted=%u status=%u\n", trusted, response[2]);
-  const bool indicated = trusted && _control.indicate(handle, response, sizeof(response));
-  SB_DFU_TRACE("SBDFU indicate confirmed=%u\n", indicated);
   if (indicated && saved && cacheReady) {
     // This is the last fallible step before the original encrypted handoff.
     // A failure leaves the application running, with USB notifications restored
