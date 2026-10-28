@@ -1,6 +1,11 @@
 #ifdef MUZI_BASE_SUPERIO
 #include "SuperbaseBondedDFU.h"
 #include "SuperbaseDFU.h"
+#ifdef SUPERBASE_DFU_TRACE
+#define SB_DFU_TRACE(...) do { if (Serial) Serial.printf(__VA_ARGS__); } while (0)
+#else
+#define SB_DFU_TRACE(...) do {} while (0)
+#endif
 
 namespace {
 // 8EC90004-F315-4F60-9FB8-838830DAEA50, Bluetooth little-endian UUID.
@@ -51,6 +56,7 @@ void SuperbaseBondedDFU::authorize(uint16_t handle, BLECharacteristic* character
   ble_gatts_rw_authorize_reply_params_t reply = {};
   reply.type = BLE_GATTS_AUTHORIZE_TYPE_WRITE;
   reply.params.write.gatt_status = status;
+  SB_DFU_TRACE("SBDFU auth len=%u status=%u\n", request ? request->len : 0, status);
   if (sd_ble_gatts_rw_authorize_reply(handle, &reply) == NRF_SUCCESS && status == BLE_GATT_STATUS_SUCCESS) {
     _instance->_request.store(handle);
     superbase_dfu_state = SuperbaseDfuState::Requested;
@@ -62,10 +68,15 @@ void SuperbaseBondedDFU::process() {
   if (handle == BLE_CONN_HANDLE_INVALID ||
       (superbase_dfu_state != SuperbaseDfuState::Ready && superbase_dfu_state != SuperbaseDfuState::Rejected)) return;
   const bool saved = superbase_dfu_state == SuperbaseDfuState::Ready;
+  SB_DFU_TRACE("SBDFU process saved=%u conn=%u\n", saved, handle);
   const uint8_t response[] = {0x20, 0x01, uint8_t(saved ? 0x01 : 0x04)};
   // Indications wait for HVC: run on the application task, never the BLE callback.
   // Failed storage, a lost link or missing confirmation must never enter DFU.
-  if (trustedConnection(handle) && _control.indicate(handle, response, sizeof(response)) && saved) {
+  const bool trusted = trustedConnection(handle);
+  SB_DFU_TRACE("SBDFU indicate begin trusted=%u\n", trusted);
+  const bool indicated = trusted && _control.indicate(handle, response, sizeof(response));
+  SB_DFU_TRACE("SBDFU indicate confirmed=%u\n", indicated);
+  if (indicated && saved) {
     // The installed Legacy loader cannot invalidate the application's larger
     // GATT table reliably. Clear that cache while this application still owns
     // the valid handles; wait for the peer's confirmation without removing its bond.
@@ -76,15 +87,19 @@ void SuperbaseBondedDFU::process() {
     if (validRange) {
       superbase_service_changed_status = sd_ble_gatts_service_changed(handle,
         superbase_dfu_control_handle - 4, superbase_gatt_last_handle);
+      SB_DFU_TRACE("SBDFU cache status=%lu range=%u..%u\n", (unsigned long)superbase_service_changed_status,
+        superbase_dfu_control_handle-4, superbase_gatt_last_handle);
       if (superbase_service_changed_status == NRF_SUCCESS) {
         const uint32_t started = millis();
         while (_cacheConfirmed.load() != handle && uint32_t(millis()-started) < 1000) delay(1);
         cacheReady = _cacheConfirmed.load() == handle;
+        SB_DFU_TRACE("SBDFU cache confirmed=%u\n", cacheReady);
       }
     }
     // This is the last fallible step before the original encrypted handoff.
     // A failure leaves the application running, with USB notifications restored
     // by PrepareUsb; the updater cannot report a completed firmware transfer.
+    SB_DFU_TRACE("SBDFU prepare ready=%u\n", cacheReady);
     if (cacheReady && trustedConnection(handle) && superbaseDfuPrepareUsb()) superbaseDfuJumpToBootloader(handle);
   }
   _request.store(BLE_CONN_HANDLE_INVALID);

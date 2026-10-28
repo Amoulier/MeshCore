@@ -31,6 +31,9 @@ err_t SuperbaseDFU::begin() {
 }
 
 void SuperbaseDFU::authorize(uint16_t handle, BLECharacteristic* characteristic, ble_gatts_evt_write_t* request) {
+#ifdef SUPERBASE_DFU_TRACE
+  if (Serial) Serial.printf("SBDFU legacy len=%u\n", request ? request->len : 0);
+#endif
   // Nordic LegacyButtonlessDfuImpl sends START_DFU + APPLICATION (01 04).
   // Older clients use START_DFU alone. Validate before waiting for storage.
   if (!request || !characteristic || !_original ||
