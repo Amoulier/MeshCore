@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <string.h>
 #include <algorithm>
+#include "Stream.h"
+inline MockUSBSerial Serial;
 #define LOW 0
 #define HIGH 1
 #define INPUT 0

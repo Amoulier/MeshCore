@@ -8,7 +8,10 @@
 // The Muzi Base PCB ships in two radio flavors. Keep the user-facing identity
 // (OTA/DFU name and reported manufacturer) distinct per radio even though the
 // board logic is shared.
-#if defined(USE_SX1262)
+#if defined(SUPERBASE_USB_DIAGNOSTICS)
+  #define MUZI_BASE_OTA_NAME  "MUZI_SUPERBASE_OTA"
+  #define MUZI_BASE_MFR_NAME  "Muzi Works SuperBase"
+#elif defined(USE_SX1262)
   #define MUZI_BASE_OTA_NAME  "MUZI_BASE_UNO_OTA"
   #define MUZI_BASE_MFR_NAME  "Muzi Base Uno"
 #else
@@ -24,6 +27,10 @@ protected:
 #endif
 
 public:
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+  bool displayReady = false, imuPresent = false, imuSleepVerified = false;
+  uint8_t imuPowerRegister = 0, magnetometerMode = 255;
+#endif
   bool (*prepareShutdown)() = nullptr;
   MuziBaseBoard() : NRF52Board(MUZI_BASE_OTA_NAME) {}
   void begin();

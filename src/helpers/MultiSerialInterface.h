@@ -26,6 +26,9 @@ private:
 
   bool _enabled = false;
   RegisteredInterface _interfaces[MAX_INTERFACES] = {};
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+  BaseSerialInterface* _reply_interface = nullptr;
+#endif
 
 public:
   bool addInterface(InterfaceType type, BaseSerialInterface* iface) {
@@ -122,7 +125,7 @@ public:
     
     // check if any interface is connected
     for(auto iface : _interfaces){
-      if(iface.instance && iface.instance->isConnected()) {
+      if(iface.instance && iface.instance->isEnabled() && iface.instance->isConnected()) {
         return true;
       }
     }
@@ -162,6 +165,18 @@ public:
     if(!_enabled || len == 0){
       return 0;
     }
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+    if (src[0] < 0x80 && _reply_interface) {
+      return _reply_interface->isEnabled() && _reply_interface->isConnected()
+        ? _reply_interface->writeFrame(src, len) : 0;
+    }
+    bool delivered = false;
+    for (auto iface : _interfaces) {
+      if (iface.instance && iface.instance->isEnabled() && iface.instance->isConnected())
+        delivered = (iface.instance->writeFrame(src, len) == len) || delivered;
+    }
+    return delivered ? len : 0;
+#endif
 
     // write frame to all enabled interfaces
     bool allSuccessful = true;
@@ -188,6 +203,9 @@ public:
       if(iface.instance && iface.instance->isEnabled()){
         size_t frameSize = iface.instance->checkRecvFrame(dest);
         if(frameSize > 0){
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+          _reply_interface = iface.instance;
+#endif
           return frameSize; 
         }
       }

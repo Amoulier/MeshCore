@@ -14,7 +14,11 @@ void ArduinoSerialInterface::disable() {
 }
 
 bool ArduinoSerialInterface::isConnected() const { 
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+  return _isEnabled && bool(Serial);
+#else
   return true;   // no way of knowing, so assume yes
+#endif
 }
 
 bool ArduinoSerialInterface::isWriteBusy() const {

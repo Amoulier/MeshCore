@@ -3,8 +3,16 @@
 #include "../BaseSerialInterface.h"
 #include <bluefruit.h>
 #ifdef MUZI_BASE_SUPERIO
+#include <atomic>
 #include <helpers/ui/SuperbaseSupport.h>
 #include "SuperbaseDFU.h"
+
+class SuperbaseBatteryService : public BLEBas {
+public:
+  void setSubscriptionCallback(BLECharacteristic::write_cccd_cb_t callback) {
+    _battery.setCccdWriteCallback(callback);
+  }
+};
 #endif
 
 #ifndef BLE_TX_POWER
@@ -19,11 +27,13 @@ class SerialBLEInterface : public BaseSerialInterface {
 #endif
   BLEUart bleuart;
 #ifdef MUZI_BASE_SUPERIO
-  BLEBas battery_service;
+  SuperbaseBatteryService battery_service;
   superbase::BatteryDelivery _battery_delivery;
   superbase::RetryTimer _battery_poll;
+  std::atomic<bool> _battery_subscription_pending{false};
   uint8_t _battery_percent = 0;
   bool _battery_known = false;
+  static void onBatterySubscription(uint16_t connection_handle, BLECharacteristic* characteristic, uint16_t value);
 #endif
   bool _isEnabled;
   bool _isDeviceConnected;

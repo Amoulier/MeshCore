@@ -1,0 +1,33 @@
+#pragma once
+#include <stddef.h>
+#include <stdint.h>
+
+namespace superbase {
+// dfu_ble_peer_data_get() in the published v2.3-muzi.1 bootloader at 0xF4610.
+// Its literal pool proves a 60-byte peer at 0x20007F82 and CRC at 0x20007F80.
+// Match the complete routine, not a version string or a guessed RAM layout.
+constexpr uint8_t muzi_peer_verifier[] = {
+  0x38,0xb5,0x04,0x46,0xa8,0xb1,0x3c,0x21,0x0c,0x48,0x00,0x22,0x03,0xf0,0xea,0xfd,
+  0x0b,0x49,0x0b,0x88,0x83,0x42,0x0e,0xd1,0x08,0x4a,0x02,0xf1,0x3c,0x00,0x52,0xf8,
+  0x04,0x5b,0x44,0xf8,0x04,0x5b,0x82,0x42,0xf9,0xd1,0x01,0x33,0x0b,0x80,0x00,0x20,
+  0x38,0xbd,0x0e,0x20,0xfc,0xe7,0x0b,0x20,0xfa,0xe7,0x00,0xbf,0x82,0x7f,0x00,0x20,
+  0x80,0x7f,0x00,0x20
+};
+
+inline bool muziPeerCrcFirst(const volatile uint8_t* verifier) {
+  for (size_t i = 0; i < sizeof(muzi_peer_verifier); ++i)
+    if (verifier[i] != muzi_peer_verifier[i]) return false;
+  return true;
+}
+
+inline bool adaptDfuPeer(volatile uint8_t* window, const volatile uint8_t* verifier) {
+  if (!muziPeerCrcFirst(verifier)) return false;
+  const uint8_t crc_low = window[60], crc_high = window[61];
+  // Bluefruit has finished reading this record. Move backwards because the
+  // 60-byte source and destination overlap. Leave all other reserved RAM alone.
+  for (unsigned i = 60; i > 0; --i) window[i + 1] = window[i - 1];
+  window[0] = crc_low;
+  window[1] = crc_high;
+  return true;
+}
+}

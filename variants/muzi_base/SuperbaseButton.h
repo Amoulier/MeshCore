@@ -21,6 +21,10 @@ class SuperbaseButton : public MomentaryButton {
   int edge(bool down, uint32_t at);
   int click(int event, uint32_t now);
 public:
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+  volatile uint32_t capturedEdges = 0, droppedEdges = 0;
+  bool interruptAttached = false;
+#endif
   SuperbaseButton(uint8_t slot, int8_t pin, uint32_t long_ms = 1000, bool multi = false)
     : MomentaryButton(pin, long_ms, true, true, false), _slot(slot), _pin(pin), _multi(multi), _long_ms(long_ms) {}
   void begin() override;

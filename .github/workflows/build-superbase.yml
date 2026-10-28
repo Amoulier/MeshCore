@@ -3,7 +3,7 @@ name: Build SuperBase Companion BLE
 on:
   workflow_dispatch:
   push:
-    branches: [feature/superbase-companion-ble]
+    branches: [release/superbase-v1.18-sb2-rc1]
 
 permissions:
   contents: read
@@ -16,41 +16,58 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Test SuperBase failure and recovery paths
+      - name: Test production helpers and recovery paths
         run: python test/superbase/run.py --sanitize
 
   build:
     needs: regressions
     runs-on: ubuntu-latest
+    env:
+      TZ: America/La_Paz
     steps:
-      - name: Clone repository
-        uses: actions/checkout@v6
-
-      - name: Setup build environment
-        uses: ./.github/actions/setup-build-environment
-
-      - name: Build SuperBase firmware
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-build-environment
+      - name: Build production SuperBase Companion BLE
         env:
-          FIRMWARE_VERSION: v1.18-sb2
+          FIRMWARE_VERSION: v1.18-sb2-rc1
           DISABLE_DEBUG: '1'
         run: bash build.sh build-firmware muzi_base_uno_superIO_companion_radio_ble
-
-      - name: Check firmware and generate checksums
-        working-directory: out
+      - name: Prepare named candidate assets
         run: |
-          test -n "$(find . -maxdepth 1 -name '*.uf2' -print -quit)"
-          sha256sum *.uf2 *.zip > SHA256SUMS.txt
-
-      - name: Verify SuperBase firmware package
+          mkdir -p candidate
+          cp .pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.uf2 candidate/MeshCore-Muzi-Works-SuperBase-Companion-BLE-v1.18-sb2-rc1.uf2
+          cp .pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.zip candidate/MeshCore-Muzi-Works-SuperBase-Companion-BLE-v1.18-sb2-rc1-dfu.zip
+          cp docs/superbase-rc1-validation.md candidate/VALIDACION.md
+          cp src/helpers/ui/emoji/LICENSE.txt candidate/LICENSE-OpenMoji.txt
+      - name: Audit application payload and reserved bootloader RAM
         run: >-
           python bin/audit-superbase-package.py
-          .pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.uf2
-          .pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.zip
-          --version v1.18-sb2 --report out/validation.json
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v7
+          candidate/MeshCore-Muzi-Works-SuperBase-Companion-BLE-v1.18-sb2-rc1.uf2
+          candidate/MeshCore-Muzi-Works-SuperBase-Companion-BLE-v1.18-sb2-rc1-dfu.zip
+          --elf .pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.elf
+          --version v1.18-sb2-rc1 --report candidate/VALIDATION.json
+      - name: Record source, production profile and checksums
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          folder = Path('candidate')
+          binary = Path('.pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.elf').read_bytes()
+          assert b'superbaseDiagnosticCommand' not in binary
+          assert b'diag build' not in binary
+          config = Path('variants/muzi_base/platformio.ini').read_text()
+          assert 'SUPERBASE_USB_DIAGNOSTICS' not in config and 'SUPERBASE_DEBUG' not in config
+          record = {'version':'v1.18-sb2-rc1', 'source_commit':os.environ['GITHUB_SHA'],
+                    'profile':'muzi_base_uno_superIO_companion_radio_ble',
+                    'build_type':'release', 'debug_firmware':False, 'usb_companion_diagnostics':False,
+                    'physical_rc1_validation':'pending; see VALIDACION.md',
+                    'workflow_run':os.environ['GITHUB_SERVER_URL']+'/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID']}
+          (folder/'BUILD.json').write_text(json.dumps(record,indent=2)+'\n')
+          files = sorted(p for p in folder.iterdir() if p.is_file() and p.name != 'SHA256SUMS.txt')
+          (folder/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
+          PY
+      - uses: actions/upload-artifact@v7
         with:
-          name: superbase-companion-ble-${{ github.sha }}
-          path: out/
+          name: superbase-rc1-${{ github.sha }}
+          path: candidate/
           if-no-files-found: error

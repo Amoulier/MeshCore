@@ -1,0 +1,19 @@
+{
+  "source": "OpenMoji 17.0.0 black SVG",
+  "license": "CC BY-SA 4.0",
+  "archive_sha256": "f127e2cfd5e8fb17c2a5ec6ec73a66c954a83588ffd1d91047988fc6b70f26e8",
+  "metadata_sha256": "ab181dd523021dfbe2b98a13d96ab384b7b3014d17815261bc267fb39d9a211b",
+  "color_fallback_archive_sha256": "59b0cd9f6fe033818fc02585cea42bea9fba5d68a4d3a3639bfe5d5cc3805689",
+  "color_fallback_glyphs": [
+    "1F195"
+  ],
+  "rasterization": "Sharp 72px; ink crop; 3px maximum filter; Lanczos 10px; threshold 80",
+  "sequence_count": 3953,
+  "unique_bitmaps": 1528,
+  "trie_nodes": 4702,
+  "max_codepoints": 9,
+  "bitmap_size": "10x10, 1 bit",
+  "estimated_flash_bytes": 86984,
+  "generated_hash_line_endings": "LF",
+  "generated_sha256": "122d5f9f857411b2cc68f9db78e6418dbf56887aaeac9fa0c1cd365eaa7ead39"
+}

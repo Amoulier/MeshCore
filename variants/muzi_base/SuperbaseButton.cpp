@@ -13,12 +13,23 @@ void SuperbaseButton::begin() {
   pinMode(_pin, INPUT_PULLUP);
   _buttons[_slot] = this;
   void (*callbacks[])() = {irq0, irq1, irq2, irq3, irq4, irq5};
-  attachInterrupt(_pin, callbacks[_slot], CHANGE);
+  int attached = attachInterrupt(_pin, callbacks[_slot], CHANGE);
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+  interruptAttached = attached != 0;
+#endif
 }
 
 void SuperbaseButton::capture() {
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+  capturedEdges++;
+#endif
   uint8_t next = (_write + 1) % 8;
-  if (next == _read) return;
+  if (next == _read) {
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+    droppedEdges++;
+#endif
+    return;
+  }
   _edges[_write].at = millis();
   _edges[_write].down = digitalRead(_pin) == LOW;
   _write = next;

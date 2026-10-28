@@ -1,87 +1,78 @@
 # Muzi Works SuperBase — MeshCore Companion Bluetooth
 
-Este fork está preparado para el **SuperBase con Base Uno (nRF52840 + SX1262) y Super IO**, conectado a la aplicación MeshCore del móvil por Bluetooth.
+Candidata **v1.18-sb2-rc1** para **Muzi Works SuperBase con Base Uno
+(nRF52840 + SX1262) y Super IO**. Conexión al móvil mediante la app MeshCore
+por Bluetooth. Se publica como prerelease para validar un alcance congelado.
 
-El soporte de hardware procede de MeshCore oficial, incorporado en el [PR #3108](https://github.com/meshcore-dev/MeshCore/pull/3108). La base de esta rama es `81dbae592ffad40b4212bc0b37e82b38da08f4bc` de `meshcore-dev/MeshCore/main`.
+El perfil `muzi_base_uno_superIO_companion_radio_ble` es el nombre interno de
+compilación heredado del soporte de hardware oficial; el producto es **Muzi Works
+SuperBase**. No usar perfiles Base Duo/LR1121 en el modelo Base Uno/SX1262.
 
-## Perfil seleccionado
+## Alcance
 
-`muzi_base_uno_superIO_companion_radio_ble` es el entorno predeterminado de PlatformIO en esta rama. Incluye SX1262, Bluetooth, pantalla SH1107 de 128 × 128, navegación de la interfaz Companion con botones, GPS y buzzer. Para usar GPS deben estar activados tanto Mode 2 como la opción GPS de la interfaz.
+- Batería Bluetooth BAS con reintentos y nueva entrega al suscribirse.
+- Corrección del aviso falso del cargador BQ25185.
+- Bluetooth controlable desde la pantalla y preferencias persistentes.
+- Modos de buzzer All, Off, Messages, System y DMs Only; reproducción estable.
+- Navegación con seis controles, filtrado de rebotes y alternativa por sondeo.
+- GPS sujeto a Mode 2 y a la preferencia GPS del menú.
+- Reposo de sensores que no usa este Companion y preparación de apagado.
+- Guardado de preferencias mediante archivo temporal y recuperación RX de radio.
+- Corrección de la entrada DFU, reinicio posterior y compatibilidad con Nordic.
+- Emojis monocromos en nombres, contactos y mensajes; catálogo de 3.953 secuencias.
 
-Usa el **PIN que aparece en la pantalla** para emparejar. MeshCore genera un PIN de sesión cuando la pantalla funciona y no existe un PIN guardado. `123456` es el valor alternativo de compilación para el funcionamiento sin pantalla; no es necesariamente el PIN activo del SuperBase.
+No se añaden funciones en esta candidata. Se conserva el protocolo MeshCore y
+la configuración guardada del usuario. No incluye teclado autónomo ni brújula.
 
-Este perfil utiliza la interfaz Companion de MeshCore. No implementa el teclado autónomo ni la brújula de Meshtastic. Los mensajes se escriben desde el móvil. MeshCore y Meshtastic utilizan redes y protocolos distintos.
+## Estado de validación
 
-No selecciones los perfiles Base Duo (LR1121) para el SuperBase con Base Uno.
+La [matriz de implementación y pruebas](docs/superbase-rc1-validation.md) separa
+pruebas automáticas, observaciones físicas anteriores y comprobaciones pendientes.
+**La RC1 exacta no se ha instalado ni ensayado físicamente.** El paquete usa la
+compilación de producción optimizada, sin interfaz Companion USB de diagnóstico.
+Las imágenes debug y los registros internos no forman parte de esta publicación.
 
-## Mejoras adaptadas del fork de Meshtastic
+Los seis controles responden en la implementación ensayada, pero la captura por
+interrupciones no está aprobada; el sondeo puede perder pulsaciones muy breves
+entre consultas. Faltan pruebas prolongadas de autonomía, alcance y persistencia
+en el binario final. Por eso esta candidata todavía no es una versión estable.
 
-Referencia funcional: [Meshtastic SuperBase, revisión 223e443ae](https://github.com/Amoulier/meshtastic-superbase-firmware/tree/223e443ae). La implementación conserva el protocolo y la configuración de radio de MeshCore.
+## Archivos e instalación
 
-| Función | Comportamiento en este fork |
-| --- | --- |
-| Batería Bluetooth | Servicio estándar BAS, porcentaje limitado a 0–100, reintentos de escritura/notificación y actualización al reconectar o suscribirse tarde. Conserva la medición de voltaje original. |
-| Cargador | Distingue carga, reposo, fallo recuperable y fallo persistente del BQ25185. Muestra aviso temporal y advertencia persistente, que desaparecen al recuperarse. Ignora los pines de fallo cuando no hay alimentación USB. |
-| Bluetooth en ejecución | Encendido y apagado desde su página, sin reinicio, con preferencia conservada al arrancar de nuevo. |
-| Buzzer | Página Buzzer: All, Off, Messages, System y DMs Only. El modo se guarda. DMs Only avisa de mensajes directos, incluso con el móvil conectado; los mensajes de canal se conservan sin interrumpir la pantalla. |
-| Audio RTTTL | Copia estable de la melodía, control de propiedad y parada inmediata al silenciar; una instancia no puede detener el sonido de otra. |
-| Navegación | Captura de pulsación y liberación por interrupciones, alternativa por sondeo, filtrado de rebotes y tiempos válidos al desbordarse el reloj. Se conservan las pulsaciones durante la espera del bucle. |
-| GPS | Mode 2 y la preferencia de software deben permitirlo. Evita arranques duplicados e invalida el fix anterior del receptor al apagar o comenzar una búsqueda nueva. La posición guardada del nodo se conserva. |
-| Energía | Solicita reposo al ICM20948 y al magnetómetro AK09916, sin uso en este Companion. Al apagar también deshabilita buzzer, alimentación de pantalla y GPS. |
-| Preferencias y apagado | Escribe preferencias en un archivo temporal y las sustituye al terminar; ante fallo conserva el archivo anterior y reintenta. Vacía contactos pendientes y caché de flash antes de apagar o reiniciar. |
-| Actualización Bluetooth | La entrada DFU espera a que el bucle principal termine y guarde los datos; rechaza la entrada si el guardado falla o no responde a tiempo. |
-| Radio SX1262 | Reintentos espaciados, reinicialización tras fallos reiterados de recepción y restauración de frecuencia, ancho de banda, SF, CR, potencia y RX Boost. Protege las transmisiones activas. |
+- `MeshCore-Muzi-Works-SuperBase-Companion-BLE-v1.18-sb2-rc1.uf2`: aplicación UF2.
+- `MeshCore-Muzi-Works-SuperBase-Companion-BLE-v1.18-sb2-rc1-dfu.zip`: paquete
+  Nordic DFU; seleccionar directamente este ZIP en la app de actualización.
+- `SHA256SUMS.txt`, `BUILD.json` y `VALIDATION.json`: integridad, revisión de código
+  y auditoría del paquete. Los archivos solo contienen la aplicación, sin cambiar
+  bootloader ni SoftDevice.
 
-Los botones izquierda/derecha y arriba/abajo recorren las páginas. El botón central selecciona; Atrás regresa al inicio. Tres pulsaciones rápidas de Atrás cambian el modo del buzzer. La página Buzzer permite cambiarlo directamente con el botón central.
+Para UF2, conectar USB y entrar al cargador con doble RESET; copiar el archivo
+UF2 a la unidad del nodo. Para DFU, usar la app Nordic existente con sus valores
+predeterminados. No se requieren nuevas aplicaciones ni cambios de ajustes.
+Después, conectar MeshCore con el PIN que aparece en la pantalla. El valor
+alternativo de compilación `123456` no tiene por qué ser el PIN activo. Nordic
+puede eliminar el vínculo al actualizar con valores predeterminados; si MeshCore
+solicita emparejamiento, usar el PIN de la pantalla.
 
-La regla de posición estacionaria de 12 horas de Meshtastic no necesita un temporizador equivalente: este Companion no genera envíos periódicos de posición por iniciativa propia. Se conservan los anuncios solicitados por el usuario y las respuestas de telemetría de MeshCore. No se trasladan el ACK por MQTT ni los cambios de seguridad específicos de Meshtastic.
+GPS requiere Mode 2 y habilitación en el menú. La recepción dentro de edificios
+no está garantizada; se obtuvo fix a cielo abierto en la implementación ensayada.
+La radio conserva los parámetros guardados. El valor de compilación para nodos
+sin configurar sigue siendo 869.618 MHz; este fork no configura una región.
 
-## Compilar en Windows
-
-Con Python, Git y PlatformIO instalados, abre una terminal en la carpeta del repositorio:
-
-```powershell
-pio run -e muzi_base_uno_superIO_companion_radio_ble
-pio run -e muzi_base_uno_superIO_companion_radio_ble -t create_uf2
-```
-
-El archivo instalable queda en:
+## Compilar y verificar
 
 ```text
-.pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.uf2
+pio run -e muzi_base_uno_superIO_companion_radio_ble -t buildprog -t create_uf2
+python test/superbase/run.py
 ```
 
-También puedes usar `pio run` para compilar únicamente el perfil predeterminado.
+Linux/WSL también admite `python test/superbase/run.py --sanitize`. El flujo
+**Build SuperBase Companion BLE** compila únicamente el perfil de producción,
+ejecuta las regresiones y audita los límites de flash/RAM y la coincidencia de
+aplicación UF2/DFU antes de producir el artefacto candidato.
 
-Esta rama también corrige la generación UF2 en carpetas con espacios y propaga los errores de conversión a PlatformIO.
-
-## Compilar en GitHub
-
-El flujo **Build SuperBase Companion BLE** está configurado para compilar este perfil al subir cambios a esta rama. Incluye un disparador manual para cuando el flujo esté disponible en la rama predeterminada del fork. El artefacto descargable contiene el UF2 y el ZIP DFU generados por el proceso oficial `build.sh`, junto con sus sumas SHA-256. El ZIP descargado desde Actions es un contenedor: extráelo para obtener el UF2.
-
-## Instalar y conectar
-
-1. Guarda los ajustes de Meshtastic que quieras conservar antes de sustituir su firmware.
-2. Conecta el SuperBase por USB con un cable de datos y pulsa RESET dos veces rápidamente para entrar al cargador UF2.
-3. Cuando aparezca la unidad USB del cargador, copia `firmware.uf2` a esa unidad. El dispositivo debe reiniciarse al terminar. No copies el ZIP contenedor de Actions.
-4. Abre la aplicación MeshCore, busca el dispositivo por Bluetooth y empareja con el PIN mostrado en la pantalla.
-5. Configura la frecuencia, ancho de banda, spreading factor y coding rate que utilice tu red local, dentro de lo permitido en tu región. El valor predeterminado heredado del código es **869.618 MHz**; este fork no presupone una región de uso.
-6. Comprueba pantalla, lectura de batería, conexión Bluetooth, GPS en Mode 2 y envío/recepción con otro nodo MeshCore que tenga los mismos parámetros de radio.
-
-Si no aparece la unidad del cargador, consulta la [documentación del fabricante](https://muzi.works/pages/resources) antes de intentar cambiar el bootloader.
-
-## Alcance de la validación
-
-**v1.18-sb2** corrige una omisión de v1.18-sb1: la entrada STAT1 del cargador necesitaba `INPUT_PULLUP`. Al dejarla flotante podía aparecer `! Check charger` sin un fallo real. Se restauró la configuración eléctrica utilizada por nuestro fork de Meshtastic y se añadió una regresión de entrada de drenador abierto: reproduce el aviso falso sin pull-up y comprueba carga, reposo y fallos reales con pull-up. Compilación, regresiones Windows y Linux/WSL con AddressSanitizer/UBSan aprobadas. RAM: 147872 bytes; flash: 361280 bytes. Falta confirmar en el nodo físico si ésta era la causa de su aviso.
-
-Validación local del 27 de octubre de 2026, versión **v1.18-sb1**: compilación del perfil y regresiones de producción en Windows y Linux/WSL para fallos del servicio BAS, estados del cargador, políticas y propiedad del audio, fallos de guardado, pulsaciones breves/rebotes/desbordamiento del reloj, recuperación RX, protección TX y espera/rechazo de DFU. Ejecución: `python test/superbase/run.py` con g++ instalado; Linux también pasó con `--sanitize` (AddressSanitizer y UBSan). La generación UF2 desde rutas con espacios y la propagación de errores de conversión también se comprobaron.
-
-Uso de RAM: 147872 / 248832 bytes (59.4 %). Uso de flash: 361264 / 708608 bytes (51.0 %). La auditoría `bin/audit-superbase-package.py` comprobó familia nRF52840, límites de flash de aplicación, vectores de arranque, versión, CRC16, requisito SoftDevice y coincidencia de los datos de aplicación entre UF2 y ZIP DFU.
-
-Las regresiones usan periféricos y almacenamiento simulados; no simulan el dispositivo completo. Falta comprobar en un SuperBase real los botones, pantalla, GPS, entrega de notificaciones BAS a un móvil, condiciones de fallo del cargador, actualización DFU, RF y consumo. No se ha instalado esta versión en el dispositivo durante este trabajo. La protección del archivo de preferencias no implica una transacción atómica conjunta de todos los archivos.
-
-## Mantener el fork
-
-El remoto `origin` apunta al fork personal y `upstream` a MeshCore oficial. Integra futuras actualizaciones oficiales mediante una rama y revisión de cambios; la rama principal y los demás trabajos del fork son independientes de esta preparación.
-
-Fuentes: [SuperBase](https://muzi.works/products/superbase), [perfil oficial de hardware](https://github.com/meshcore-dev/MeshCore/blob/main/variants/muzi_base/platformio.ini), [MeshCore](https://github.com/meshcore-dev/MeshCore).
+El soporte de hardware procede de MeshCore oficial, base
+`81dbae592ffad40b4212bc0b37e82b38da08f4bc`. Las mejoras adaptadas se basan en
+el alcance acordado del fork de Meshtastic, sin trasladar sus mecanismos de MQTT
+ni sus cambios de seguridad específicos. La [atribución OpenMoji](src/helpers/ui/emoji/README.md)
+y su licencia CC BY-SA 4.0 acompañan los pictogramas.

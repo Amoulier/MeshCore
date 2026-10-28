@@ -19,6 +19,9 @@ class SH1107Display : public DisplayDriver
   Adafruit_SH1107 display;
   bool _isOn;
   uint8_t _color;
+#ifdef MUZI_BASE_SUPERIO
+  uint8_t _textSize = 1;
+#endif
 
   bool i2c_probe(TwoWire &wire, uint8_t addr);
 
@@ -39,5 +42,9 @@ public:
   void drawRect(int x, int y, int w, int h) override;
   void drawXbm(int x, int y, const uint8_t *bits, int w, int h) override;
   uint16_t getTextWidth(const char *str) override;
+#ifdef MUZI_BASE_SUPERIO
+  void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override;
+  void drawTextEllipsized(int x, int y, int max_width, const char* str) override;
+#endif
   void endFrame() override;
 };

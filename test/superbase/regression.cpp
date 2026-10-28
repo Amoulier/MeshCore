@@ -8,6 +8,8 @@
 #include "SuperbaseButton.h"
 #include <helpers/ui/buzzer.h>
 #include "SuperbaseDFU.h"
+#include <helpers/ArduinoSerialInterface.h>
+#include <helpers/MultiSerialInterface.h>
 
 struct BatteryService {
   int writes = 0, notifications = 0;
@@ -70,6 +72,19 @@ void batteryTests() {
   delivery.disconnected();
   delivery.update(service, 50, true, 2);
   assert(service.notifications == 4);
+  // A bonded host may consume the reconnect notification before attaching its
+  // listener. A new subscription must re-send the same percentage and retry.
+  service.subscribed = false;
+  delivery.subscribed();
+  delivery.update(service, 50, true, 2);
+  assert(service.notifications == 5);
+  service.subscribed = true;
+  delivery.update(service, 50, true, 2);
+  delivery.update(service, 50, true, 2);
+  assert(service.notifications == 6);
+  delivery.subscribed();
+  delivery.update(service, 50, true, 2);
+  assert(service.notifications == 7);
   delivery.update(service, 255, true, 2);
   assert(service.value == 100);
   assert(superbase::batteryPercent(1000) == 0 && superbase::batteryPercent(5000) == 100);
@@ -216,26 +231,128 @@ void soundTests() {
   assert(second.isPlaying()); second.quiet(true);
 }
 
+bool superbaseDfuPrepareUsb() {
+  assert(superbase_dfu_state == SuperbaseDfuState::Ready);
+  ++mock_usb_prepare_calls;
+  return mock_usb_prepare_ok;
+}
+
 void dfuTests() {
   SuperbaseDFU dfu;
   assert(dfu.begin() == ERROR_NONE);
   ble_gatts_evt_write_t request;
-  mock_delay_hook = []() { superbase_dfu_state = SuperbaseDfuState::Ready; };
-  mock_dfu_control->invoke(request);
-  assert(mock_dfu_calls == 1 && superbase_dfu_state == SuperbaseDfuState::Running);
+  // Exercise exactly the production path, with Nordic's real 01 04 payload.
+  for (uint16_t length : {2, 1}) {
+    request.len = length;
+    mock_delay_hook = []() { superbase_dfu_state = SuperbaseDfuState::Ready; };
+    const int prior = mock_dfu_calls;
+    mock_dfu_control->invoke(request);
+    mock_delay_hook = nullptr;
+    assert(mock_dfu_calls == prior + 1);
+    assert(mock_authorize_error == BLE_GATT_STATUS_SUCCESS);
+    assert(superbase_dfu_state == SuperbaseDfuState::Running);
+  }
+  request.len = 2;
+  const int prior_calls = mock_dfu_calls, prior_usb = mock_usb_prepare_calls;
   mock_delay_hook = []() { superbase_dfu_state = SuperbaseDfuState::Rejected; };
   mock_dfu_control->invoke(request);
-  assert(mock_dfu_calls == 1 && mock_authorize_error == BLE_GATT_STATUS_ATTERR_INSUF_RESOURCES);
+  assert(mock_authorize_error == BLE_GATT_STATUS_ATTERR_INSUF_RESOURCES);
   mock_delay_hook = nullptr;
-  mock_now = UINT32_MAX - 100;
+  mock_now = UINT32_MAX - 100; // Storage timeout across millis rollover.
   mock_dfu_control->invoke(request);
-  assert(mock_dfu_calls == 1 && superbase_dfu_state == SuperbaseDfuState::Running);
-  request.len = 0;
+  assert(mock_authorize_error == BLE_GATT_STATUS_ATTERR_INSUF_RESOURCES);
+  assert(superbase_dfu_state == SuperbaseDfuState::Running);
+  assert(mock_dfu_calls == prior_calls && mock_usb_prepare_calls == prior_usb);
+
+  mock_dfu_control->subscribed = false;
   mock_dfu_control->invoke(request);
-  assert(mock_dfu_calls == 1 && mock_authorize_error == BLE_GATT_STATUS_ATTERR_REQUEST_NOT_SUPPORTED);
+  assert(mock_authorize_error == BLE_GATT_STATUS_ATTERR_CPS_CCCD_CONFIG_ERROR);
+  mock_dfu_control->subscribed = true;
+  superbase_dfu_state = SuperbaseDfuState::Ready; // Another transition owns storage.
+  mock_dfu_control->invoke(request);
+  assert(mock_authorize_error == BLE_GATT_STATUS_ATTERR_INSUF_RESOURCES);
+  assert(superbase_dfu_state == SuperbaseDfuState::Ready);
+  superbase_dfu_state = SuperbaseDfuState::Running;
+
+  auto rejected = [&]() {
+    mock_dfu_control->invoke(request);
+    assert(mock_authorize_error == BLE_GATT_STATUS_ATTERR_REQUEST_NOT_SUPPORTED);
+    assert(mock_dfu_calls == prior_calls && mock_usb_prepare_calls == prior_usb);
+  };
+  request.len = 0; rejected();
+  request.len = 3; rejected();
+  request.len = 2; request.data[1] = 2; rejected();
+  request.data[1] = 4; request.data[0] = 2; rejected();
+  request.data[0] = 1; request.handle = 2; rejected();
+  request.handle = 1; request.offset = 1; rejected();
+  request.offset = 0; request.op = 2; rejected();
+  request.op = BLE_GATTS_OP_WRITE_REQ;
+
+  // USB failures cannot hand off to a bootloader with an active controller.
+  mock_usb_prepare_ok = false;
+  mock_delay_hook = []() { superbase_dfu_state = SuperbaseDfuState::Ready; };
+  mock_dfu_control->invoke(request);
+  mock_delay_hook = nullptr;
+  assert(mock_dfu_calls == prior_calls && mock_usb_prepare_calls == prior_usb + 1);
+  assert(mock_authorize_error == BLE_GATT_STATUS_ATTERR_INSUF_RESOURCES);
+  assert(superbase_dfu_state == SuperbaseDfuState::Running);
+  mock_usb_prepare_ok = true;
+}
+
+class TestBLEInterface : public BaseSerialInterface {
+public:
+  bool enabled = false, connected = false;
+  std::vector<uint8_t> incoming, outgoing;
+  void enable() override { enabled = true; }
+  void disable() override { enabled = false; }
+  bool isEnabled() const override { return enabled; }
+  bool isConnected() const override { return enabled && connected; }
+  bool isWriteBusy() const override { return false; }
+  size_t writeFrame(const uint8_t* data, size_t len) override {
+    outgoing.insert(outgoing.end(), data, data+len); return len;
+  }
+  size_t checkRecvFrame(uint8_t* dest) override {
+    size_t len = incoming.size();
+    std::copy(incoming.begin(), incoming.end(), dest); incoming.clear(); return len;
+  }
+};
+
+void usbTransportTests() {
+  ArduinoSerialInterface usb;
+  usb.begin(Serial); usb.enable();
+  assert(!usb.isConnected());
+  Serial.connected = true;
+  assert(usb.isConnected());
+  uint8_t frame[176] = {};
+  Serial.input = {'<',3,0,66};
+  assert(usb.checkRecvFrame(frame) == 0);
+  Serial.input.push_back('v'); Serial.input.push_back('e');
+  assert(usb.checkRecvFrame(frame) == 3 && frame[0] == 66 && frame[2] == 'e');
+  uint8_t reply[] = {29,'O','K'};
+  assert(usb.writeFrame(reply, 3) == 3);
+  assert(Serial.output == std::vector<uint8_t>({'>',3,0,29,'O','K'}));
+  Serial.output.clear();
+  TestBLEInterface ble;
+  MultiSerialInterface manager;
+  manager.addInterface(InterfaceType::Bluetooth, &ble);
+  manager.addInterface(InterfaceType::USB, &usb);
+  manager.enable(); ble.connected = true;
+  Serial.input.insert(Serial.input.end(), {'<',1,0,20});
+  assert(manager.checkRecvFrame(frame) == 1 && frame[0] == 20);
+  assert(manager.writeFrame(reply, 3) == 3 && ble.outgoing.empty());
+  assert(Serial.output.size() == 6);
+  Serial.output.clear();
+  uint8_t push[] = {0x83,1};
+  assert(manager.writeFrame(push, 2) == 2 && ble.outgoing.size() == 2 && Serial.output.size() == 5);
+  Serial.connected = false;
+  ble.incoming = {20};
+  assert(manager.checkRecvFrame(frame) == 1);
+  assert(manager.writeFrame(reply, 3) == 3 && ble.outgoing.size() == 5);
+  ble.connected = false;
+  assert(!manager.isConnected());
 }
 
 int main() {
-  batteryTests(); policyTests(); chargerInputTests(); persistenceTests(); buttonTests(); radioTests(); soundTests(); dfuTests();
-  std::cout << "PASS: battery delivery, charger, audio ownership/policy, safe preferences, navigation, RX recovery, TX protection and DFU gating\n";
+  batteryTests(); policyTests(); chargerInputTests(); persistenceTests(); buttonTests(); radioTests(); soundTests(); dfuTests(); usbTransportTests();
+  std::cout << "PASS: battery delivery, charger, audio ownership/policy, safe preferences, navigation, RX recovery, TX protection, DFU gating and USB/BLE reply routing\n";
 }

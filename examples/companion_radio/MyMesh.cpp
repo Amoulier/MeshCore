@@ -2078,6 +2078,10 @@ void MyMesh::enterCLIRescue() {
 
 bool MyMesh::handleCommand(const char* command, uint32_t sender_timestamp, char* reply) {
   while (*command == ' ') command++; // skip leading spaces
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+  extern bool superbaseDiagnosticCommand(const char* command, char* reply);
+  if (superbaseDiagnosticCommand(command, reply)) return true;
+#endif
 
   if (strlen(command) > 4 && command[2] == '|') { // optional prefix (for companion radio CLI)
     memcpy(reply, command, 3);                    // reflect the prefix back

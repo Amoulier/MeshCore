@@ -1,6 +1,9 @@
 #include "SH1107Display.h"
 #include <Adafruit_GrayOLED.h>
 #include "Adafruit_SH110X.h"
+#ifdef MUZI_BASE_SUPERIO
+#include "EmojiText.h"
+#endif
 
 #ifndef DISPLAY_ROTATION
 #define DISPLAY_ROTATION 0
@@ -61,10 +64,17 @@ void SH1107Display::startFrame(ColorVal bkg)
   display.setTextColor(_color);
   display.setTextSize(1);
   display.cp437(true); // Use full 256 char 'Code Page 437' font
+#ifdef MUZI_BASE_SUPERIO
+  _textSize = 1;
+  display.setTextWrap(false); // UTF-8 tokens wrap atomically in EmojiText.
+#endif
 }
 
 void SH1107Display::setTextSize(int sz)
 {
+#ifdef MUZI_BASE_SUPERIO
+  _textSize = sz > 0 ? sz : 1;
+#endif
   display.setTextSize(sz);
 }
 
@@ -81,7 +91,11 @@ void SH1107Display::setCursor(int x, int y)
 
 void SH1107Display::print(const char *str)
 {
+#ifdef MUZI_BASE_SUPERIO
+  superbase::emoji::print(display, str, _textSize, _color);
+#else
   display.print(str);
+#endif
 }
 
 void SH1107Display::fillRect(int x, int y, int w, int h)
@@ -101,11 +115,36 @@ void SH1107Display::drawXbm(int x, int y, const uint8_t *bits, int w, int h)
 
 uint16_t SH1107Display::getTextWidth(const char *str)
 {
+#ifdef MUZI_BASE_SUPERIO
+  return superbase::emoji::width(str, _textSize);
+#else
   int16_t x1, y1;
   uint16_t w, h;
   display.getTextBounds(str, 0, 0, &x1, &y1, &w, &h);
   return w;
+#endif
 }
+
+#ifdef MUZI_BASE_SUPERIO
+void SH1107Display::translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size)
+{
+  // This display has its own Unicode renderer; keep complete original sequences.
+  superbase::emoji::copyUtf8(dest, src, dest_size);
+}
+
+void SH1107Display::drawTextEllipsized(int x, int y, int max_width, const char* str)
+{
+  setCursor(x, y);
+  if (getTextWidth(str) <= max_width) { print(str); return; }
+  const int dots = getTextWidth("...");
+  if (max_width < dots) return;
+  char text[256];
+  const size_t bytes = superbase::emoji::fittedPrefix(str, max_width - dots, _textSize, sizeof(text) - 4);
+  memcpy(text, str, bytes);
+  memcpy(text + bytes, "...", 4);
+  print(text);
+}
+#endif
 
 void SH1107Display::endFrame()
 {

@@ -53,10 +53,21 @@ void MuziBaseBoard::begin() {
   for (uint8_t ad0 = 0; ad0 < 2; ad0++) {
     imu.begin(Wire1, ad0);
     if (imu.status != ICM_20948_Stat_Ok) continue;
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+    imuPresent = true;
+#endif
     AK09916_CNTL2_Reg_t mode = {};
     mode.MODE = AK09916_mode_power_down;
     imu.writeMag(AK09916_REG_CNTL2, reinterpret_cast<uint8_t*>(&mode));
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+    magnetometerMode = imu.readMag(AK09916_REG_CNTL2);
+#endif
     imu.sleep(true);
+#ifdef SUPERBASE_USB_DIAGNOSTICS
+    if (imu.setBank(0) == ICM_20948_Stat_Ok &&
+        imu.read(AGB0_REG_PWR_MGMT_1, &imuPowerRegister, 1) == ICM_20948_Stat_Ok)
+      imuSleepVerified = (imuPowerRegister & 0x40) != 0 && magnetometerMode == 0;
+#endif
     break;
   }
   Wire1.end();

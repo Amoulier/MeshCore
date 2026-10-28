@@ -41,6 +41,7 @@ class BatteryDelivery {
   int _stored = -1, _notified = -1;
 public:
   void disconnected() { _notified = -1; }
+  void subscribed() { _notified = -1; }
   template<class Service>
   void update(Service& service, uint8_t level, bool connected, uint16_t handle) {
     if (level > 100) level = 100;

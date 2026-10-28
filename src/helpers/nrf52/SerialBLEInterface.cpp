@@ -33,6 +33,11 @@ void SerialBLEInterface::onConnect(uint16_t connection_handle) {
 #ifdef MUZI_BASE_SUPERIO
     instance->_battery_delivery.disconnected();
     instance->_battery_poll.clear();
+    instance->_battery_subscription_pending.store(false);
+    // Restore encryption early enough to deliver Service Changed before a
+    // bonded client's cached service discovery (including Nordic DFU).
+    BLEConnection* connection = Bluefruit.Connection(connection_handle);
+    if (connection) connection->requestPairing();
 #endif
   }
 }
@@ -57,6 +62,14 @@ void SerialBLEInterface::onSecured(uint16_t connection_handle) {
     if (instance->isValidConnection(connection_handle, true)) {
       if (!instance->_isEnabled) { instance->disconnect(); return; }
       instance->_isDeviceConnected = true;
+#ifdef MUZI_BASE_SUPERIO
+      // The application and bootloader expose different service tables. Tell
+      // bonded clients to rediscover instead of using handles from older builds.
+      // S140 rejects ranges that start in its GAP/GATT system attributes.
+      // DFU is first: service, packet declaration/value, control declaration/value.
+      superbase_service_changed_status = sd_ble_gatts_service_changed(connection_handle,
+        superbase_dfu_control_handle - 4, superbase_gatt_last_handle);
+#endif
       
       // Connection interval units: 1.25ms, supervision timeout units: 10ms
       // Apple: "The product will not read or use the parameters in the Peripheral Preferred Connection Parameters characteristic."
@@ -189,11 +202,18 @@ void SerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code
 
   Bluefruit.setEventCallback(onBLEEvent);
 
+#ifdef MUZI_BASE_SUPERIO
+  // Match the bootloader's first custom service and packet/control/revision
+  // handle order. Nordic may retain its service cache across the DFU jump.
+  bledfu.setPermission(SECMODE_ENC_WITH_MITM, SECMODE_ENC_WITH_MITM);
+  bledfu.begin();
+#endif
   bleuart.setPermission(SECMODE_ENC_WITH_MITM, SECMODE_ENC_WITH_MITM);
   bleuart.begin();
   bleuart.setRxCallback(onBleUartRX);
 #ifdef MUZI_BASE_SUPERIO
   battery_service.setPermission(SECMODE_ENC_WITH_MITM, SECMODE_ENC_WITH_MITM);
+  battery_service.setSubscriptionCallback(onBatterySubscription);
   battery_service.begin();
 #endif
 
@@ -201,8 +221,13 @@ void SerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code
 
   // Register DFU on the main BLE stack so paired clients can discover it
   // without switching the device into a separate OTA-only BLE mode first.
+#ifndef MUZI_BASE_SUPERIO
   bledfu.setPermission(SECMODE_ENC_WITH_MITM, SECMODE_ENC_WITH_MITM);
   bledfu.begin();
+#endif
+#ifdef MUZI_BASE_SUPERIO
+  superbaseDfuCacheGattRange();
+#endif
 
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
@@ -292,7 +317,19 @@ void SerialBLEInterface::disable() {
 }
 
 #ifdef MUZI_BASE_SUPERIO
+void SerialBLEInterface::onBatterySubscription(uint16_t connection_handle, BLECharacteristic*, uint16_t value) {
+  if (instance && instance->_conn_handle == connection_handle && (value & BLE_GATT_HVX_NOTIFICATION))
+    instance->_battery_subscription_pending.store(true);
+}
+
 void SerialBLEInterface::loop() {
+  // A bonded host can restore CCCD before its application installs a listener.
+  // Re-send when the application subscribes, even if the percentage is unchanged.
+  // The BLE callback only signals; delivery state stays owned by the main loop.
+  if (_battery_subscription_pending.exchange(false)) {
+    _battery_delivery.subscribed();
+    _battery_poll.clear();
+  }
   if (_battery_known && _battery_poll.ready(millis(), 1000)) {
     _battery_poll.attempted(millis());
     _battery_delivery.update(battery_service, _battery_percent, _isEnabled && isConnected(), _conn_handle);
