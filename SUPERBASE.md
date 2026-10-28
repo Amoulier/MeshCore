@@ -26,8 +26,9 @@ SuperBase**. No usar perfiles Base Duo/LR1121 en este modelo Base Uno/SX1262.
   usando el cargador compatible indicado más abajo.
 - Emojis monocromos en nombres, contactos y mensajes: 3.953 secuencias OpenMoji.
 
-Atrás para apagar pantalla y el control de LEDs se añadieron por solicitud
-expresa durante la validación. Se conservan el protocolo MeshCore y los datos
+Atrás para apagar pantalla, el control de LEDs y el GPS exclusivamente físico se
+incorporaron por solicitud expresa durante la validación. Se conservan el
+protocolo MeshCore y los datos
 guardados del usuario. El alcance no incluye teclado autónomo ni brújula.
 
 ## Uso de los controles
@@ -66,13 +67,32 @@ La [matriz de implementación y pruebas](docs/superbase-rc1-validation.md) disti
 el instalable exacto, pruebas de código, evidencia física y pendientes. El ZIP
 corregido para control GPS exclusivamente físico tiene SHA-256
 `13317e834cd4835b58febddcc82d2fca8ac0700d77c635b52af3423615c8230f`.
-Compila y pasa regresiones y auditoría; su instalación y prueba física están
-pendientes. La evidencia física de la imagen anterior corresponde al ZIP
+Código compilado: `949296ce97a79d5fa0b99deafe17ce8e9f869437`.
+Su UF2 tiene SHA-256
+`c0b3ad9c763b6d055a1359a3d5b1771f7c7358aa1b87200403fe331456387212`.
+La compilación ARM, regresiones y auditoría pasan. **Ya está instalado por USB:**
+la transferencia y el retorno automático al firmware pasaron. MeshCore llegó a
+su pantalla normal conectada sin reemparejamiento manual. La evidencia física
+de la imagen anterior corresponde al ZIP
 `1f0e400df7e9b6052608aed4380e55fe3183d0b6aba55f85cf15a4445b87d943`.
 La compilación es optimizada, sin interfaz Companion USB de diagnóstico ni trazas.
 Las imágenes debug y los registros internos no se distribuirán.
 
-Comprobaciones físicas de esta imagen:
+Comprobaciones físicas de la imagen actual `13317e…`:
+
+- Mode 2 muestra GPS On; centro en la página no lo cambia. Mode 1 muestra GPS
+  Off/no fix y centro tampoco lo cambia.
+- Sin USB y exclusivamente a batería, RESET en Mode 1 arrancó con GPS Off/no fix
+  y RESET en Mode 2 arrancó con GPS On. En exterior, a batería y en Mode 2,
+  recuperó fix con ocho satélites. El usuario confirmó ambas secuencias.
+- MeshCore volvió a su pantalla normal conectada después de esos arranques,
+  mostrando 74%; no se realizó un nuevo emparejamiento manual.
+- Joystick del nombre dibujado correctamente, Atrás para apagar pantalla y centro
+  para despertarla, confirmados por el usuario.
+- LEDs Off conservado después de instalar por USB. Esto todavía no repite la
+  persistencia de On tras RESET ni Off durante OTA en esta imagen.
+
+Evidencia física anterior, exclusivamente del ZIP `1f0e400…`:
 
 - Seis controles, Atrás para apagar pantalla y centro para despertarla: confirmados
   por el usuario. El falso aviso del cargador está ausente.
@@ -98,16 +118,18 @@ se obtuvieron con imágenes internas anteriores y falta repetirlas en esta image
 
 La captura por interrupciones se comprobó en una imagen interna anterior: los
 seis controles produjeron flancos y no hubo descartes en esa muestra. La prueba
-funcional actual confirma sus acciones; no garantiza toda pulsación muy breve
+funcional de `1f0e400…` confirmó las seis acciones; en `13317e…` se volvieron a
+confirmar Atrás/centro y la página GPS informativa. No garantiza toda pulsación muy breve
 durante cualquier operación bloqueante.
 
-Siguen pendientes GPS exterior y arranque/sesión a batería sobre el instalable
-actual de la corrección del GPS. En la imagen anterior `1f0e400…`, el usuario
-confirmó fix con ocho satélites a batería, apagado en Mode 1 y nueva adquisición
-en Mode 2. A petición del usuario, la fuente ahora elimina el control de GPS por
-software y su dependencia de la preferencia guardada. Esta corrección requiere
-su propia compilación, instalación y prueba; los resultados anteriores no se
-transfieren automáticamente. Quedan además las comprobaciones
+En `13317e…` siguen pendientes OTA con vínculo conservado, radio bidireccional y
+GATT BAS. El arranque a batería según el switch y el fix exterior básico ya tienen
+confirmación física actual; todavía no hay una sesión prolongada a batería.
+En la imagen anterior `1f0e400…` también se habían observado fix con ocho
+satélites y alternancia por switch. A petición del usuario, la corrección elimina
+el control de GPS por software y su dependencia de la preferencia guardada.
+Los resultados de la imagen anterior no se transfieren automáticamente.
+Quedan además las comprobaciones
 específicas identificadas en la matriz, como GATT BAS y filtros selectivos del buzzer.
 No hay medición instrumental de consumo, descarga completa, alcance máximo ni
 ensayos eléctricos inducidos. El ciclo OTA con USB no aprueba autonomía ni otras

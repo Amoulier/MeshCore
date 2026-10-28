@@ -8,20 +8,21 @@ Uso: Companion MeshCore por Bluetooth.
 ## Estado de la candidata
 
 **Publicación detenida. No hay una candidata aprobada como estable.**
-El alcance incluye las mejoras acordadas y dos solicitudes expresas durante la
+El alcance incluye las mejoras acordadas y tres solicitudes expresas durante la
 validación: pulsación corta de Atrás para apagar la pantalla y una opción
-persistente de LEDs en la interfaz. El perfil normal usa optimización de
+persistente de LEDs en la interfaz, además del control GPS exclusivamente físico.
+El perfil normal usa optimización de
 producción, sin comandos USB de diagnóstico ni trazas.
 Los binarios internos, datos del nodo y registros de desarrollo no se publican.
 
-**Corrección compilada, aún pendiente de instalar, solicitada el 28 de octubre:** el GPS debe obedecer
+**Corrección instalada por USB, solicitada el 28 de octubre:** el GPS debe obedecer
 exclusivamente al interruptor físico (Mode 1 Off, Mode 2 On), también al arrancar.
 La página pasa a ser informativa y las escrituras de activación GPS por Companion
 se rechazan sin cambiar estado ni preferencias. La antigua preferencia guardada
 deja de impedir el arranque GPS en Mode 2. El receptor integrado ya no recibe un
-pulso de detección al arrancar en Mode 1. Esta corrección necesita instalación y
-verificación propias; los ensayos del ZIP `1f0e400…` siguen identificados como
-evidencia anterior, no como aprobación automática del nuevo binario.
+pulso de detección al arrancar en Mode 1. Los ensayos del ZIP `1f0e400…` siguen
+identificados como evidencia anterior, no como aprobación automática del nuevo
+binario.
 
 El nuevo ZIP tiene SHA-256
 `13317e834cd4835b58febddcc82d2fca8ac0700d77c635b52af3423615c8230f`;
@@ -36,11 +37,29 @@ ausencia de sondeo de encendido en Mode 1, sondeo de switch cada 200 ms y
 rollover, ausencia de arranques/paradas duplicados y rechazo de escrituras
 GPS sin efectos. Los demás ajustes delegados conservan su comportamiento.
 
+La transferencia USB y el retorno automático al firmware de este ZIP pasaron.
+La app MeshCore llegó a su pantalla normal conectada, con 90% de batería mostrado,
+sin reemparejamiento manual. Ese porcentaje no constituye una nueva comprobación
+de notificaciones GATT BAS ni demuestra alimentación exclusivamente a batería.
+
+**Confirmaciones del usuario en `13317e…`:** en Mode 2 la página muestra GPS On y
+centro no lo cambia; en Mode 1 muestra GPS Off/no fix y centro tampoco lo cambia.
+El usuario regresó a Mode 2. Se conservaron LEDs Off, el joystick del nombre se
+dibujó correctamente y Atrás apaga la pantalla/centro la despierta.
+
+**Arranque y GPS exterior básicos aprobados en `13317e…`:** el usuario confirmó
+alimentación exclusivamente a batería, sin USB. Tras RESET en Mode 1 arrancó con
+GPS Off/no fix y tras RESET en Mode 2 arrancó con GPS On. En exterior, a batería
+y en Mode 2, recuperó fix con ocho satélites. Android volvió a la pantalla normal
+conectada a SuperBase, con 74% mostrado después de esos arranques y sin nuevo
+emparejamiento manual. **Todavía no se han probado en esta imagen OTA, radio
+bidireccional ni GATT BAS. La sesión prolongada a batería sigue pendiente.**
+
 Los resultados físicos siguientes no se transfieren automáticamente a cada
 recompilación. Se identifica qué implementación se ensayó y qué falta repetir
 sobre el instalable final. Compilación y auditoría no certifican el hardware.
 
-El instalable de aplicación utilizado para las pruebas físicas siguientes es el ZIP de producción con SHA-256
+Las pruebas físicas históricas siguientes corresponden al ZIP de producción anterior con SHA-256
 `1f0e400df7e9b6052608aed4380e55fe3183d0b6aba55f85cf15a4445b87d943`,
 compilado desde la revisión de código `4a7577d37612becba55ebc431ea71313ada2b999`.
 El UF2 correspondiente tiene SHA-256
@@ -51,14 +70,14 @@ seis controles, Atrás para apagar pantalla y centro para despertarla, ausencia
 del aviso falso del cargador, LEDs On/Off persistentes tras RESET, Bluetooth Off
 y buzzer Off persistentes tras RESET y posterior activación de Bluetooth.
 
-**La OTA del archivo actual pasó:** con Nordic predeterminado y cargador
+**La OTA del archivo anterior `1f0e400…` pasó:** con Nordic predeterminado y cargador
 `v2.3-muzi.2-rc1`, USB regresó automáticamente en **49,24 s**. MeshCore reconectó
 con el mismo vínculo, cuyo último evento BONDED seguía en **00:07:18.398**, sin
 nuevo PIN, RESET, reconectar USB ni cambiar ajustes del teléfono. LEDs Off se
 conservó durante esa OTA. El cargador ensayado tiene SHA-256
 `5d8163cc5a4f28bef2639388c83a95c1b846ab4b8a2222efe963d8d0eda35114`.
 
-También pasó radio bidireccional con Heltec V4: SuperBase → V4 y la respuesta
+En `1f0e400…` también pasó radio bidireccional con Heltec V4: SuperBase → V4 y la respuesta
 V4 → SuperBase quedaron Delivered y se observaron en cada receptor. Con buzzer
 Off y LEDs Off, el usuario confirmó recepción silenciosa y sin destello verde.
 Con buzzer All, una respuesta recibida quedó Delivered y el usuario oyó el aviso;
@@ -66,7 +85,7 @@ el verde permaneció apagado. Los cinco nombres de modo de buzzer se recorrieron
 en pantalla; esto no equivale a ensayar físicamente cada filtro de los tres
 modos selectivos.
 
-**GPS exterior y sesión a batería siguen pendientes sobre este instalable.**
+Como antecedente del GPS, sin sustituir la prueba actual de `13317e…`:
 El 28 de octubre, con el ZIP `1f0e400…`, el usuario confirmó funcionamiento
 exclusivamente a batería, fix con ocho satélites, apagado/no fix en Mode 1 y
 recuperación de fix al volver a Mode 2. MeshCore conectó por Bluetooth a la RC1.
@@ -84,8 +103,9 @@ Se conserva como evidencia técnica el ciclo OTA anterior del ZIP de producción
 cargador `v2.3-muzi.2-rc1`, ese archivo transfirió y validó; USB regresó
 automáticamente en 49,44 s y MeshCore reconectó con el mismo vínculo, sin nuevo
 PIN, RESET, reconectar el cable ni cambiar ajustes del teléfono. Ese ciclo
-anterior es evidencia histórica; la aprobación del archivo actual corresponde
-al ensayo de 49,24 s descrito arriba. Ambos se hicieron con USB conectado y no
+anterior es evidencia histórica; la aprobación OTA de `1f0e400…` corresponde
+al ensayo de 49,24 s descrito arriba. Ninguno aprueba OTA en `13317e…`.
+Ambos se hicieron con USB conectado y no
 acreditan autonomía ni las demás funciones pendientes.
 
 GitHub Actions no ejecutó el flujo nuevo porque aún no existe en la rama
@@ -93,25 +113,25 @@ predeterminada. Las compilaciones ARM, regresiones Windows y sanitizadores
 Linux/WSL se realizaron localmente. No se atribuye aprobación de CI.
 Las correcciones de suscripciones Bluetooth descritas abajo pasaron las
 regresiones nativas, AddressSanitizer/UndefinedBehaviorSanitizer y la compilación
-ARM. La comparación del vínculo antes y después del ciclo OTA actual confirmó
+ARM. La comparación del vínculo antes y después del ciclo OTA de `1f0e400…` confirmó
 el mismo evento de emparejamiento y conexión MeshCore sin una nueva solicitud.
 
 ## Implementación y verificación
 
 | Mejora acordada | Implementación y evidencia | Validación pendiente |
 | --- | --- | --- |
-| Batería Bluetooth | BAS 0–100, reintentos y nueva suscripción; regresiones de entrega. La lectura/notificación GATT BAS en Windows corresponde a imágenes internas anteriores. El porcentaje visible en la app Android actual no demuestra por sí solo esa lectura/notificación BAS. | Repetir la comprobación GATT BAS sobre el instalable final. Calibración si se promete autonomía. |
-| Cargador BQ25185 | STAT1 con pull-up y distinción carga/reposo/fallo. Usuario confirmó desaparición de `! Check charger`; entradas y fallos simulados cubiertos. | Fallos eléctricos inducidos y corriente de carga sin medir. |
-| Bluetooth desde pantalla | Habilitación en ejecución y preferencia persistente. En `1f0e400…`, Bluetooth Off persistió tras RESET; el usuario lo volvió a On y MeshCore conectó. La reconexión después de OTA conservó el vínculo. | No queda pendiente ese recorrido Off/RESET/On; no se extrapola a todos los teléfonos. |
+| Batería Bluetooth | BAS 0–100, reintentos y nueva suscripción; regresiones de entrega. La lectura/notificación GATT BAS en Windows corresponde a imágenes internas anteriores. En `13317e…`, Android mostró 90% tras USB y 74% después de los arranques a batería; esos datos no demuestran por sí solos lectura/notificación BAS. | Repetir la comprobación GATT BAS sobre `13317e…`. Calibración si se promete autonomía. |
+| Cargador BQ25185 | STAT1 con pull-up y distinción carga/reposo/fallo. En `1f0e400…`, el usuario confirmó desaparición de `! Check charger`; entradas y fallos simulados cubiertos. | No se añade una confirmación física del cargador en `13317e…`. Fallos eléctricos inducidos y corriente de carga sin medir. |
+| Bluetooth desde pantalla | Habilitación en ejecución y preferencia persistente. En `1f0e400…`, Bluetooth Off persistió tras RESET; el usuario lo volvió a On y MeshCore conectó. La reconexión después de OTA conservó el vínculo. En `13317e…`, MeshCore conectó normalmente después de USB y de los arranques a batería, sin reemparejamiento manual. | Las conexiones actuales no repiten Off/RESET/On ni conservación del vínculo durante OTA en `13317e…`; no se extrapola a todos los teléfonos. |
 | Buzzer | Modos All, Off, Messages, System y DMs Only; regresiones de políticas y propiedad. En `1f0e400…`, el usuario vio los cinco nombres y Off persistió tras RESET. Un DM confirmado Delivered y visto en SuperBase fue silencioso en Off; otro DM confirmado Delivered produjo aviso audible en All. | Ensayo físico de los filtros Messages, System y DMs Only; sus nombres en pantalla no prueban su selección de avisos. |
-| Seis controles y Atrás para apagar pantalla | Captura de flancos, rebotes, pulsación larga, triple Atrás y sondeo alternativo; regresiones. En `1f0e400…`, el usuario confirmó los seis controles, Atrás para apagar y centro para despertar. El CLICK corto de Atrás se consume y no despierta una pantalla ya apagada. Triple Atrás y pulsación larga se conservan. Captura interna previa: máscara 63, dos flancos adicionales por control, cero descartes. | No queda pendiente la confirmación de las seis acciones actuales; no se afirma captura infalible de toda pulsación breve durante cualquier operación bloqueante. |
-| LEDs desde la pantalla, solicitud nueva | Página LEDs junto a sonido, centro alterna On/Off y guarda `comp.led_en`, predeterminado On. Verde P1.03/GPIO 35; azul P1.04/GPIO 36 se mantiene apagado. En `1f0e400…`, On restauró el parpadeo verde y persistió tras RESET; Off lo detuvo, persistió tras RESET y sobrevivió a OTA. Durante los DMs silencioso y audible, el usuario confirmó ausencia de destello verde con LEDs Off. | Recorridos On/Off y persistencia aprobados. Rojo de carga y destellos del cargador de arranque quedan fuera; véanse los límites de hardware. |
-| GPS | Fuente corregida para control exclusivamente físico, arranque según Mode 1/2, rechazo de escrituras GPS y página informativa. Se conserva descarte de fix al apagar/iniciar. En el ZIP anterior `1f0e400…`, el usuario confirmó ocho satélites, fix a batería y apagado/nueva adquisición por switch. | Compilar, instalar y comprobar la corrección física exclusiva: centro no cambia GPS, ambos modos y arranque a batería en cada modo. No se promete recepción interior. |
-| Energía y apagado | Reposo IMU/magnetómetro, parada de buzzer/pantalla/GPS y arranque a batería observados en imágenes internas. En `1f0e400…`, el usuario confirmó alimentación exclusivamente a batería y se observaron respuestas Bluetooth. | Arranque y sesión a batería en el nuevo instalable. Sesión prolongada, descarga completa y consumo instrumental sin medir. |
-| Preferencias | Temporal + rename, reintento y vaciado previo; pruebas de apertura, escritura incompleta, borrado y rename fallidos. En `1f0e400…`, LEDs On/Off, Bluetooth Off y buzzer Off persistieron tras RESET; LEDs Off también durante OTA. Radio e identidad se conservaron. La preferencia GPS heredada se conserva por compatibilidad, pero se ignora como puerta en SuperBase. | Verificar arranque según el switch en el nuevo binario; corte de alimentación durante escritura sin ensayar. Contactos heredados no informan todos sus errores; no hay transacción conjunta. |
-| Radio SX1262 | Recuperación RX y protección TX con fallos simulados. En el instalable actual `1f0e400…`, SuperBase → Heltec V4 y V4 → SuperBase quedaron Delivered y se vieron en el receptor; se comprobó recepción con buzzer Off y con All, conservando LEDs Off. No se modificaron parámetros de radio. | Mensajería bidireccional actual aprobada; alcance máximo y fallo físico inducido sin ensayar. |
-| Actualización Bluetooth | Guardado previo, corrección de USB y RAM de intercambio, autorización S140 y entrada cifrada con vínculo compartido. Ambos arreglos CCCD pasan pruebas nativas, sanitizadores y ARM. **Ciclo actual aprobado:** ZIP `1f0e400…`, cargador `v2.3-muzi.2-rc1` SHA `5d8163…`, Nordic predeterminado, USB automático en 49,24 s y reconexión con el mismo último BONDED `00:07:18.398`, sin nuevo PIN, RESET, reconectar USB ni cambiar ajustes del teléfono. LEDs Off sobrevivió. | Un ciclo completo con USB aprobado para esta pareja exacta de app/cargador. No acredita autonomía ni otras combinaciones de cargador/teléfono. Una nueva petición de emparejamiento sería un fallo, no un paso normal. |
-| Emojis | UTF-8, 3.953 secuencias OpenMoji 17, recorte y saltos sin partir secuencias. Catálogo y límites con sanitizadores. Usuario confirmó joystick en nombre real y pantalla RC1 actual. | Confirmación visual del joystick aprobada; no se ensayaron físicamente los 3.953 pictogramas. Monocromo de 10 × 10: no conserva color ni todo el detalle. |
+| Seis controles y Atrás para apagar pantalla | Captura de flancos, rebotes, pulsación larga, triple Atrás y sondeo alternativo; regresiones. En `1f0e400…`, el usuario confirmó los seis controles. En `13317e…` volvió a confirmar Atrás para apagar y centro para despertar; centro en la página GPS no cambia su estado en ninguno de los dos modos. El CLICK corto de Atrás se consume y no despierta una pantalla ya apagada. Triple Atrás y pulsación larga se conservan. Captura interna previa: máscara 63, dos flancos adicionales por control, cero descartes. | Atrás/centro y el carácter informativo de la página GPS están aprobados en `13317e…`; no se presenta la prueba histórica de los seis controles como nueva captura física ni se afirma captura infalible durante operaciones bloqueantes. |
+| LEDs desde la pantalla, solicitud nueva | Página LEDs junto a sonido, centro alterna On/Off y guarda `comp.led_en`, predeterminado On. Verde P1.03/GPIO 35; azul P1.04/GPIO 36 se mantiene apagado. En `13317e…`, el usuario confirmó que LEDs Off se conservó tras instalar por USB. En `1f0e400…`, On restauró el parpadeo y persistió tras RESET; Off persistió tras RESET/OTA y no hubo destello verde durante DMs. | Off actual confirmado; todavía no se repiten On/Off tras RESET ni Off durante OTA en `13317e…`. Rojo de carga y destellos del cargador de arranque quedan fuera; véanse los límites de hardware. |
+| GPS | `13317e…` instalada y auditada: control exclusivamente físico, rechazo de escrituras GPS y página informativa. El usuario confirmó Mode 2 On y Mode 1 Off/no fix; centro no cambia ninguno. A batería y sin USB, RESET en Mode 1 arrancó Off/no fix y RESET en Mode 2 arrancó On. En exterior a batería recuperó fix con ocho satélites. Los métodos reales de arranque/control pasan pruebas nativas y sanitizadores. | Arranque por switch y adquisición exterior básica actuales aprobados. Sesión prolongada a batería pendiente; no se promete recepción interior. |
+| Energía y apagado | Reposo IMU/magnetómetro y parada de buzzer/pantalla/GPS observados en imágenes internas. En `13317e…`, el usuario confirmó alimentación exclusivamente a batería, reinicios en ambos modos y nuevo fix exterior; MeshCore reconectó sin nuevo emparejamiento manual. | Sesión prolongada a batería, descarga completa y consumo instrumental sin medir. Los reinicios básicos actuales ya están confirmados. |
+| Preferencias | Temporal + rename, reintento y vaciado previo; pruebas de apertura, escritura incompleta, borrado y rename fallidos. En `1f0e400…`, LEDs On/Off, Bluetooth Off y buzzer Off persistieron tras RESET; LEDs Off también durante OTA. La preferencia GPS heredada se conserva por compatibilidad, pero se ignora como puerta: en `13317e…` se confirmó el arranque según el switch en ambos modos. | La persistencia histórica de LEDs/Bluetooth/buzzer no se transfiere automáticamente a `13317e…`. Corte de alimentación durante escritura sin ensayar. Contactos heredados no informan todos sus errores; no hay transacción conjunta. |
+| Radio SX1262 | Recuperación RX y protección TX con fallos simulados. En el instalable anterior `1f0e400…`, SuperBase → Heltec V4 y V4 → SuperBase quedaron Delivered y se vieron en el receptor; se comprobó recepción con buzzer Off y con All, conservando LEDs Off. No se modificaron parámetros de radio. | Repetir mensajería bidireccional en `13317e…`. Alcance máximo y fallo físico inducido sin ensayar. |
+| Actualización Bluetooth | Guardado previo, corrección de USB y RAM de intercambio, autorización S140 y entrada cifrada con vínculo compartido. Ambos arreglos CCCD pasan pruebas nativas, sanitizadores y ARM. **Ciclo anterior aprobado:** ZIP `1f0e400…`, cargador `v2.3-muzi.2-rc1` SHA `5d8163…`, Nordic predeterminado, USB automático en 49,24 s y mismo último BONDED `00:07:18.398`, sin nuevo PIN, RESET, reconectar USB ni cambiar ajustes del teléfono. LEDs Off sobrevivió. En `13317e…` solo se ha completado instalación USB, retorno automático y conexión normal MeshCore. | Repetir ciclo OTA y reconexión con vínculo conservado en `13317e…`. La aprobación de `1f0e400…` no se transfiere a esta imagen ni acredita autonomía u otros teléfonos. Una nueva petición de emparejamiento sería un fallo, no un paso normal. |
+| Emojis | UTF-8, 3.953 secuencias OpenMoji 17, recorte y saltos sin partir secuencias. Catálogo y límites con sanitizadores. El usuario confirmó de nuevo el joystick del nombre correctamente dibujado en `13317e…`. | Confirmación visual actual del joystick aprobada; no se ensayaron físicamente los 3.953 pictogramas. Monocromo de 10 × 10: no conserva color ni todo el detalle. |
 | RTC | Se conserva el reloj heredado. Lectura y avance de segundos RX8130CE observados en imagen interna. | Precisión y retención no medidas; no se añade otra integración de hora. |
 
 ## Fallos y efecto real
@@ -119,14 +139,14 @@ el mismo evento de emparejamiento y conexión MeshCore sin una nueva solicitud.
 - **Aviso falso de cargador:** corrección observada y cubierta por regresiones.
 - **Bloques del emoji:** corrección observada; se conserva el nombre UTF-8.
 - **Radio sin confirmación inicial:** resuelto tras intercambiar anuncios; no
-  se reprodujo como fallo persistente. El instalable actual tuvo comunicación
+  se reprodujo como fallo persistente. El instalable anterior `1f0e400…` tuvo comunicación
   bidireccional con Heltec V4, Delivered y observada en ambos receptores.
 - **Captura por interrupciones:** los contadores a cero de una prueba anterior
   no describen la última evidencia. Los seis controles produjeron flancos reales
   antes de instalar RC1. Se mantiene el sondeo alternativo.
 - **Pantalla negra:** el apagado por inactividad se distingue del bloqueo DFU.
-  El usuario confirmó retorno automático y despertar con centro en el instalable
-  actual, sin RESET ni reconectar USB durante la OTA.
+  En `13317e…` pasó el retorno automático tras USB y el usuario confirmó despertar
+  con centro. El retorno sin RESET/reconectar USB durante OTA corresponde a `1f0e400…`.
 - **Atrás sin efecto visible:** se detectó que volvía a la página inicial.
   A petición explícita se cambió a apagar la pantalla con una pulsación corta.
   El usuario confirmó apagado con Atrás y despertar con centro en el archivo
@@ -138,7 +158,7 @@ el mismo evento de emparejamiento y conexión MeshCore sin una nueva solicitud.
   cargador y la aplicación anuncien correctamente sus cambios de servicios.
   Un emparejamiento manual completado por el usuario después de un fallo anterior
   establece la base para el nuevo ensayo; no se cuenta como conservación del
-  vínculo durante aquel fallo. **El ciclo OTA actual de `1f0e400…` conservó
+  vínculo durante aquel fallo. **El ciclo OTA anterior de `1f0e400…` conservó
   ese vínculo y reconectó MeshCore sin volver a emparejar:** último BONDED
   `00:07:18.398` idéntico antes y después. Una petición de PIN nuevo tras OTA
   se considera fallo de conservación del vínculo.
@@ -160,9 +180,9 @@ el mismo evento de emparejamiento y conexión MeshCore sin una nueva solicitud.
   escribir. Las pruebas con datos sintéticos cubren longitudes mayor/menor,
   valores cambiados/idénticos, campo ausente, conservación de claves/nombre y
   fallo de reposicionamiento sin escritura. El paquete global del framework no
-  se modifica. **La reconexión tras OTA del ZIP actual `1f0e400…` pasó con el
-  mismo vínculo y sin otro PIN.** La evidencia anterior de `ec7f774…` se conserva
-  como antecedente y no sustituye el ensayo actual.
+  se modifica. **La reconexión tras OTA del ZIP anterior `1f0e400…` pasó con el
+  mismo vínculo y sin otro PIN.** La evidencia de `ec7f774…` se conserva como
+  antecedente de ese ciclo de `1f0e400…`; ninguno aprueba OTA en `13317e…`.
 
 ## Límites del control de LEDs
 
@@ -195,32 +215,37 @@ identificación y S140 6.1.1. La compilación y la auditoría estática pasan. E
 instalable contiene el cargador con su configuración Muzi y no incluye la
 aplicación ni SoftDevice. No se trata de una imagen debug.
 
-**Un ciclo OTA con este cargador y la aplicación actual `1f0e400…` pasó.**
+**Un ciclo OTA con este cargador y la aplicación anterior `1f0e400…` pasó.**
 La firma de su rutina de intercambio coincide con la que reconoce MeshCore y se
 comprobaron físicamente transferencia, validación, arranque automático y
 reconexión con el vínculo conservado. El cargador compatible requerido para este
 resultado es `v2.3-muzi.2-rc1`; no se extiende la aprobación al cargador anterior
 ni a otras compilaciones de aplicación. El nombre de distribución previsto es
 `Muzi-Works-SuperBase-Bootloader-v2.3-muzi.2-rc1.uf2`, con el contenido ensayado.
+La repetición OTA con la aplicación actual `13317e…` permanece pendiente.
 La futura distribución debe identificar esa dependencia y sus resultados de
 validación. **La publicación continúa detenida por las demás validaciones
 pendientes; estos archivos siguen sin publicar.**
 
 ## Validaciones antes de publicar
 
-1. Instalar y verificar la corrección del GPS exclusivamente físico: Mode 1
-   apaga, Mode 2 adquiere fix, centro no cambia el estado GPS y los dos modos se
-   respetan al arrancar a batería. Completar sesión a batería. El fix y la
-   alternancia física de `1f0e400…` están confirmados; no sustituyen esta prueba
-   del nuevo binario. **La publicación continúa detenida.**
+1. La corrección `13317e…` ya está instalada. Se confirmaron Mode 1 Off/no fix,
+   Mode 2 On y centro sin cambiar GPS; también reinicios exclusivamente a batería
+   en ambos modos y nuevo fix exterior con ocho satélites. No volver a presentar
+   esas pruebas básicas como pendientes. Queda la sesión prolongada a batería.
+   **La publicación continúa detenida.**
 2. Distinguir el porcentaje mostrado por Android de la comprobación GATT BAS,
    cuya lectura/notificación física final sigue pendiente. Completar el recorrido
    físico de los modos selectivos del buzzer. La confirmación visual del joystick
    del nombre ya está aprobada en la imagen actual.
-3. Mantener como aprobados en `1f0e400…` OTA con vínculo conservado, radio en
+3. Repetir OTA con vínculo conservado y radio bidireccional en `13317e…`; todavía
+   no se han ensayado. Mantener como aprobados en `1f0e400…` OTA y radio en
    ambos sentidos, seis controles, Atrás/centro, ausencia del aviso falso de carga,
    LEDs On/Off persistentes, Bluetooth Off/RESET/On y buzzer Off/RESET. No volver
-   a presentar esas pruebas como pendientes ni extenderlas a otras compilaciones.
+   a presentar esas pruebas históricas como pendientes ni extenderlas a otras
+   compilaciones. En `13317e…` están confirmados joystick, Atrás/centro y LEDs Off
+   conservado tras USB; la persistencia de On tras RESET y Off durante OTA no se
+   han repetido todavía.
 4. Revisar las mediciones y ensayos cuantitativos pendientes: consumo, descarga
    completa, alcance, precisión/retención RTC, fallos eléctricos y corte de
    alimentación al escribir. No presentar autonomía, alcance o robustez eléctrica
