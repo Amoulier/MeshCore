@@ -18,7 +18,7 @@ SuperBase**. No usar perfiles Base Duo/LR1121 en este modelo Base Uno/SX1262.
 - Seis controles con captura de flancos, filtrado de rebotes y sondeo alternativo.
 - Atrás para apagar la pantalla y centro para despertarla.
 - Página LEDs con preferencia On/Off persistente.
-- Páginas LEDs y Buzzer con iconos originales 32 × 32 On/Off, estado y acción debajo.
+- Páginas LEDs y Buzzer con iconos Material 32 × 32 On/Off y una leyenda debajo.
 - GPS controlado exclusivamente por el interruptor físico: Mode 1 apagado,
   Mode 2 encendido. Su página es informativa.
 - Reposo de sensores sin uso en Companion y preparación de apagado.
@@ -49,12 +49,12 @@ guarda. On recupera el parpadeo verde normal; Off lo suprime. La preferencia se
 restaura tras reiniciar. Bluetooth y sonido tienen sus propias páginas y
 preferencias; apagar los LEDs no apaga Bluetooth ni la radio.
 
-La revisión visual usa iconos monocromos originales de 32 × 32 On/Off: bombilla
-redonda de contorno grueso y base corta, altavoz sólido y las mismas dos ondas
-separadas de Advert. Cada página tiene una sola leyenda en y=53, en la misma
-línea que Bluetooth, Hibernate y Advert. No cambia controles, políticas de
-LEDs/sonido ni el control GPS exclusivamente físico. El usuario rechazó su estética y pidió tomar únicamente Bluetooth como guía;
-se prepara otra comparación antes de volver a cargar firmware.
+Las páginas LEDs y Buzzer usan los bitmaps exactos de la opción B elegida por
+el usuario: derivados de Google Material Icons 3.0.1, licencia Apache 2.0, de
+32 × 32 y variantes On/Off. Cada página tiene una sola leyenda en y=53, en la
+misma línea que Bluetooth, Hibernate y Advert. No cambia controles, políticas
+de LEDs/sonido ni el control GPS exclusivamente físico. El usuario ya confirmó
+ambos estados, el estilo esperado y el funcionamiento en la pantalla del nodo.
 
 ### Límites del control de LEDs
 
@@ -75,25 +75,31 @@ la batería.
 La [matriz de implementación y pruebas](docs/superbase-rc1-validation.md) distingue
 el instalable exacto, pruebas de código, evidencia física y pendientes.
 
-**Corrección estética actualmente instalada:** ZIP SHA-256
-`c8bbb5fa95b7171ec11d4187572f3b8f9b9186e967fea81e3c7faed0bf13d487`,
+**Opción B actualmente instalada y aprobada en el nodo:** ZIP SHA-256
+`637f60b169b55d7fa44e107a20943841db0354b34793acf6b3ea0c133dd42f4b`,
 UF2 SHA-256
-`647a68be2a78e3a07cdb550fa6c1f00841b4edf45c5d49c0396907989e1dc937`
-y código compilado `8ab756e9def03306a8a1330eea464f9c92e93736`.
-ARM y auditoría UF2/DFU pasan, con 452.152 bytes de aplicación. La transferencia
-USB y el retorno automático al firmware pasaron, sin RESET ni reconectar USB.
-**El usuario rechazó también la estética de esta revisión; aún no está aprobada.** Los valores
-finales solicitados son LEDs Off y Buzzer All, todavía sin confirmar tras esta
-revisión.
+`7601f365ad1bf626cc725eb2939e9c9250aecf00dd2605846fb6c3abaa508434`
+y código compilado `e8d3ef4d3f31711a857f8925a2e9435b3a868047`.
+ARM y auditoría UF2/DFU pasan, con 452.152 bytes de aplicación. La instalación
+USB pasó y el firmware regresó automáticamente. Tras elegir B en la vista
+previa, el usuario confirmó físicamente ambos estados de LEDs/Buzzer con
+«Sí, así está bien», iguales a la opción elegida y al estilo esperado. Esto
+registra **PASS visual y funcional de esas dos páginas en `637f60…`**.
+Los valores finales **LEDs Off y Buzzer All** también están confirmados.
 
-La imagen anterior, ZIP
-`711c33dc84666674d963efb480fd0ca75f1698762b2d44de69655951fec40c57`,
-se instaló y conectó correctamente. El usuario confirmó que los iconos se veían
-y funcionaban, pero rechazó su estética: parecían añadidos frente a las páginas
-de referencia. **No se registra como PASS visual.** La corrección `c8bbb5…`
-modifica únicamente presentación; conserva el código funcional validado de GPS
-sobre interruptor físico y radio de `13317e…`, sin exigir nuevas pruebas de esas
-funciones por este cambio visual ni afirmar mediciones nuevas.
+Las revisiones `711c33…` y `c8bbb5…` eran visibles y funcionales, pero el usuario
+rechazó sus estéticas; ninguna tiene PASS visual. La última rechazada fue el ZIP
+`c8bbb5fa95b7171ec11d4187572f3b8f9b9186e967fea81e3c7faed0bf13d487`.
+La aprobación corresponde a la opción B de `637f60…`, no a esas versiones.
+
+Los iconos nuevos son derivados de Google Material Icons 3.0.1, Apache 2.0;
+el [README del artwork](examples/companion_radio/ui-new/icons/material/README.md)
+conserva atribución, SVG y modificaciones. LED On usa lightbulb outline, Buzzer
+On/Off volume up/off, y LED Off añade la diagonal del Bluetooth Off existente.
+Los Bluetooth originales permanecen intactos y no se afirma una procedencia
+exacta de esos bitmaps. Los cambios son solo de presentación: se conserva el
+código GPS/RF validado en `13317e…`, sin exigir nuevas pruebas de esas funciones
+por el ajuste visual ni atribuir mediciones nuevas.
 
 **Imagen anterior con la corrección de GPS físico:** ZIP SHA-256
 `13317e834cd4835b58febddcc82d2fca8ac0700d77c635b52af3423615c8230f`.
@@ -156,11 +162,11 @@ confirmar Atrás/centro y la página GPS informativa. No garantiza toda pulsaci�
 durante cualquier operación bloqueante.
 
 En `13317e…` siguen pendientes OTA con vínculo conservado y GATT BAS; radio
-bidireccional ya está aprobada. `711c33…` funcionaba, pero el usuario rechazó
-su estética. En `c8bbb5…` pasaron transferencia USB y retorno automático; su
-estética fue rechazada y debe revisarse con Bluetooth como única referencia. No se añaden pruebas GPS/RF por un cambio exclusivamente
-visual; su código se conserva y los resultados físicos permanecen atribuidos
-a las imágenes realmente ensayadas.
+bidireccional ya está aprobada. El usuario rechazó la estética de `711c33…` y
+`c8bbb5…`; la opción B de `637f60…` ya tiene aprobación visual y funcional de
+las páginas LEDs/Buzzer y valores finales confirmados. No se añaden pruebas
+GPS/RF por un cambio exclusivamente visual: su código se conserva y los
+resultados físicos permanecen atribuidos a las imágenes realmente ensayadas.
 El arranque a batería según el switch y el fix exterior básico ya tienen
 confirmación en `13317e…`; todavía no hay una sesión prolongada a batería.
 En la imagen anterior `1f0e400…` también se habían observado fix con ocho
