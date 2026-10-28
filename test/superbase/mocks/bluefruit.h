@@ -1,6 +1,8 @@
 #pragma once
 #include <Arduino.h>
 #include <cassert>
+#include <array>
+#include <vector>
 using err_t = int;
 #define ERROR_NONE 0
 #define BLE_GATTS_OP_WRITE_REQ 1
@@ -10,6 +12,11 @@ using err_t = int;
 #define BLE_GATT_STATUS_ATTERR_CPS_CCCD_CONFIG_ERROR 253
 #define BLE_GATT_STATUS_SUCCESS 0
 #define NRF_SUCCESS 0
+#define BLE_CONN_HANDLE_INVALID 0xFFFF
+#define BLE_GATT_STATUS_ATTERR_INSUF_AUTHENTICATION 5
+#define CHR_PROPS_WRITE 0x08
+#define CHR_PROPS_INDICATE 0x20
+#define SECMODE_ENC_WITH_MITM 3
 struct ble_gatts_evt_write_t { uint16_t len = 1; uint8_t op = 1; uint8_t data[3] = {1,4,0}; uint16_t handle = 1; uint16_t offset = 0; };
 struct ble_gatts_rw_authorize_reply_params_t { int type; struct { int gatt_status; } params_write_unused; struct { struct { int gatt_status; } write; } params; };
 inline int mock_authorize_error = 0, mock_dfu_calls = 0;
@@ -20,16 +27,65 @@ inline int sd_ble_gatts_rw_authorize_reply(uint16_t, ble_gatts_rw_authorize_repl
   mock_authorize_error = reply->params.write.gatt_status;
   return mock_authorize_result;
 }
+class BLECharacteristic;
+inline BLECharacteristic* mock_bond_control = nullptr;
+inline bool mock_indicate_ok = true;
+inline std::vector<uint8_t> mock_indication;
+inline int mock_indications = 0, mock_service_begins = 0;
+inline int mock_sc_result = 0;
+inline bool mock_sc_confirm = true;
+inline void (*mock_sc_confirm_cb)(uint16_t) = nullptr;
+inline int sd_ble_gatts_service_changed(uint16_t handle, uint16_t first, uint16_t last) {
+  assert(first == 14 && last == 39);
+  if (mock_sc_result == NRF_SUCCESS && mock_sc_confirm && mock_sc_confirm_cb) mock_sc_confirm_cb(handle);
+  return mock_sc_result;
+}
+class BLEService {
+public:
+  uint16_t uuid;
+  explicit BLEService(uint16_t value) : uuid(value) {}
+  virtual err_t begin() { ++mock_service_begins; return ERROR_NONE; }
+  void setPermission(int, int) {}
+};
+struct bond_keys_t { uint8_t unused = 0; };
+class BLEConnection {
+public:
+  bool active = true, secure = true, bond = true, stored_key = true;
+  bool connected() { return active; }
+  bool secured() { return secure; }
+  bool bonded() { return bond; }
+  bool loadBondKey(bond_keys_t*) { return stored_key; }
+};
+inline struct MockBluefruit {
+  BLEConnection peer;
+  BLEConnection* Connection(uint16_t handle) { return handle == 1 ? &peer : nullptr; }
+} Bluefruit;
 class BLECharacteristic {
 public:
   using write_authorize_cb_t = void (*)(uint16_t, BLECharacteristic*, ble_gatts_evt_write_t*);
 protected:
   write_authorize_cb_t _wr_authorize_cb = nullptr;
 public:
+  std::array<uint8_t,16> uuid = {};
+  int properties = 0;
+  BLECharacteristic() = default;
+  explicit BLECharacteristic(const uint8_t* value) { for (int i=0;i<16;++i) uuid[i]=value[i]; }
+  err_t begin() { mock_bond_control = this; return ERROR_NONE; }
+  void setProperties(int value) { properties = value; }
+  void setPermission(int, int) {}
+  void setMaxLen(int) {}
   bool subscribed = true;
+  bool indications_subscribed = true;
   struct Handles { uint16_t value_handle = 1; };
   Handles handles() { return {}; }
   bool notifyEnabled(uint16_t) { return subscribed; }
+  bool indicateEnabled(uint16_t) { return indications_subscribed; }
+  bool indicate(uint16_t, const void* data, uint16_t length) {
+    ++mock_indications;
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    mock_indication.assign(bytes, bytes+length);
+    return mock_indicate_ok;
+  }
   void setWriteAuthorizeCallback(write_authorize_cb_t cb) { _wr_authorize_cb = cb; }
   void invoke(ble_gatts_evt_write_t& request) { _wr_authorize_cb(1, this, &request); }
 };

@@ -121,6 +121,10 @@ void SerialBLEInterface::onPairingComplete(uint16_t connection_handle, uint8_t a
 
 void SerialBLEInterface::onBLEEvent(ble_evt_t* evt) {
   if (!instance) return;
+#ifdef MUZI_BASE_SUPERIO
+  if (evt->header.evt_id == BLE_GATTS_EVT_SC_CONFIRM)
+    SuperbaseBondedDFU::serviceChangedConfirmed(evt->evt.gatts_evt.conn_handle);
+#endif
   
   if (evt->header.evt_id == BLE_GAP_EVT_CONN_PARAM_UPDATE_REQUEST) {
     uint16_t conn_handle = evt->evt.gap_evt.conn_handle;
@@ -226,6 +230,7 @@ void SerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code
   bledfu.begin();
 #endif
 #ifdef MUZI_BASE_SUPERIO
+  bonded_dfu.begin();
   superbaseDfuCacheGattRange();
 #endif
 

@@ -6,6 +6,7 @@
 #include <atomic>
 #include <helpers/ui/SuperbaseSupport.h>
 #include "SuperbaseDFU.h"
+#include "SuperbaseBondedDFU.h"
 
 class SuperbaseBatteryService : public BLEBas {
 public:
@@ -28,6 +29,7 @@ class SerialBLEInterface : public BaseSerialInterface {
   BLEUart bleuart;
 #ifdef MUZI_BASE_SUPERIO
   SuperbaseBatteryService battery_service;
+  SuperbaseBondedDFU bonded_dfu;
   superbase::BatteryDelivery _battery_delivery;
   superbase::RetryTimer _battery_poll;
   std::atomic<bool> _battery_subscription_pending{false};

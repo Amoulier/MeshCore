@@ -45,7 +45,7 @@ jobs:
           candidate/MeshCore-Muzi-Works-SuperBase-Companion-BLE-v1.18-sb2-rc1.uf2
           candidate/MeshCore-Muzi-Works-SuperBase-Companion-BLE-v1.18-sb2-rc1-dfu.zip
           --elf .pio/build/muzi_base_uno_superIO_companion_radio_ble/firmware.elf
-          --version v1.18-sb2-rc1 --report candidate/VALIDATION.json
+          --version v1.18-sb2-rc1 --manufacturer 'Muzi Works SuperBase' --report candidate/VALIDATION.json
       - name: Record source, production profile and checksums
         run: |
           python - <<'PY'

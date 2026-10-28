@@ -310,6 +310,7 @@ void loop() {
       if (superbase_dfu_state == SuperbaseDfuState::Requested)
         superbase_dfu_state = saved ? SuperbaseDfuState::Ready : SuperbaseDfuState::Rejected;
     }
+    SuperbaseBondedDFU::loop();
     return;
   }
 #endif
