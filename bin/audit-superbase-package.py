@@ -12,6 +12,7 @@ parser.add_argument("uf2", type=Path)
 parser.add_argument("dfu", type=Path)
 parser.add_argument("--version")
 parser.add_argument("--target", default="muzi_base_uno_superIO_companion_radio_ble")
+parser.add_argument("--manufacturer", help="Require the product identity in the application")
 parser.add_argument("--report", type=Path)
 parser.add_argument("--elf", type=Path, help="Also verify RAM excludes the bootloader DFU handoff")
 args = parser.parse_args()
@@ -45,6 +46,8 @@ assert 0x20000000 <= stack <= 0x20040000, "Invalid application stack"
 assert entry & 1 and 0x26000 <= entry - 1 < 0x26000 + len(binary), "Invalid application entry"
 if args.version:
     assert args.version.encode() in binary, "Expected firmware version missing"
+if args.manufacturer:
+    assert args.manufacturer.encode() + b"\0" in binary, "Expected product identity missing"
 
 ram_segments = []
 if args.elf:
@@ -76,6 +79,8 @@ if args.elf:
     report["dfu_handoff_ram_excluded"] = True
     report["ram_segments"] = ram_segments
     report["sha256"][args.elf.name] = hashlib.sha256(args.elf.read_bytes()).hexdigest()
+if args.manufacturer:
+    report["manufacturer_checked"] = args.manufacturer
 if args.report:
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(report, indent=2))

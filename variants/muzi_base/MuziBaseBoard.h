@@ -8,7 +8,7 @@
 // The Muzi Base PCB ships in two radio flavors. Keep the user-facing identity
 // (OTA/DFU name and reported manufacturer) distinct per radio even though the
 // board logic is shared.
-#if defined(SUPERBASE_USB_DIAGNOSTICS)
+#if defined(MUZI_BASE_SUPERIO) && defined(USE_SX1262)
   #define MUZI_BASE_OTA_NAME  "MUZI_SUPERBASE_OTA"
   #define MUZI_BASE_MFR_NAME  "Muzi Works SuperBase"
 #elif defined(USE_SX1262)
