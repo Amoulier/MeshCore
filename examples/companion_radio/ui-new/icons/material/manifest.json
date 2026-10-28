@@ -1,0 +1,12 @@
+{
+  "source": "Google Material Icons 3.0.1",
+  "license": "Apache-2.0",
+  "bitmaps_sha256": {
+    "superbase_led_on": "e80e9a6074cb053eaaec81fdd0d21fa994f111e8a013fde1e335c66bfd7e7959",
+    "superbase_led_off": "410c4e41ca37212e2d587f5f07adfc6b1bba1e32168071759394a7997a304ba0",
+    "superbase_buzzer_on": "27e9a30ea8ccd4dc346d726acdd5eb4f6b332d806e668e00179cdad4106e5c1b",
+    "superbase_buzzer_off": "fbb3707c080acdb3341fbe960e2c8e03b3bdf99c9a1bf3831d8ae322049ff323"
+  },
+  "preview_option": "B",
+  "format": "32x32,128 bytes,MSB-first"
+}

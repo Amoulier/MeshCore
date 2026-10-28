@@ -49,10 +49,12 @@ guarda. On recupera el parpadeo verde normal; Off lo suprime. La preferencia se
 restaura tras reiniciar. Bluetooth y sonido tienen sus propias páginas y
 preferencias; apagar los LEDs no apaga Bluetooth ni la radio.
 
-En la imagen visual instalada, LEDs y Buzzer usan iconos monocromos originales
-de 32 × 32 con variantes On/Off, centrados como Bluetooth, Hibernate y Advert.
-El estado y la instrucción aparecen debajo. Es un cambio de presentación: se
-conservan las políticas de LEDs/sonido y el control GPS exclusivamente físico.
+La revisión visual usa iconos monocromos originales de 32 × 32 On/Off: bombilla
+redonda de contorno grueso y base corta, altavoz sólido y las mismas dos ondas
+separadas de Advert. Cada página tiene una sola leyenda en y=53, en la misma
+línea que Bluetooth, Hibernate y Advert. No cambia controles, políticas de
+LEDs/sonido ni el control GPS exclusivamente físico. El usuario rechazó su estética y pidió tomar únicamente Bluetooth como guía;
+se prepara otra comparación antes de volver a cargar firmware.
 
 ### Límites del control de LEDs
 
@@ -73,17 +75,25 @@ la batería.
 La [matriz de implementación y pruebas](docs/superbase-rc1-validation.md) distingue
 el instalable exacto, pruebas de código, evidencia física y pendientes.
 
-**Actualmente instalada:** la imagen con los iconos tiene ZIP SHA-256
-`711c33dc84666674d963efb480fd0ca75f1698762b2d44de69655951fec40c57`,
+**Corrección estética actualmente instalada:** ZIP SHA-256
+`c8bbb5fa95b7171ec11d4187572f3b8f9b9186e967fea81e3c7faed0bf13d487`,
 UF2 SHA-256
-`cc3e4cc399b1efa6675f42d524bb0a1f92e3bd53924712224936cd36a7ca9b9d`
-y código compilado `e6571ba59a8a337d75f1ede402cada19c4be69ad`.
-ARM y auditoría UF2/DFU pasan, con 452.440 bytes de aplicación. Se inspeccionó
-la hoja local de comparación. La instalación USB y el retorno automático al
-firmware pasaron; MeshCore Android conectó sin nuevo emparejamiento manual.
-Falta la respuesta del usuario para confirmar físicamente los iconos y su
-legibilidad. Solo cambia el renderizado de LEDs/Buzzer y sus bitmaps respecto
-al código anterior; no cambia GPS ni las políticas.
+`647a68be2a78e3a07cdb550fa6c1f00841b4edf45c5d49c0396907989e1dc937`
+y código compilado `8ab756e9def03306a8a1330eea464f9c92e93736`.
+ARM y auditoría UF2/DFU pasan, con 452.152 bytes de aplicación. La transferencia
+USB y el retorno automático al firmware pasaron, sin RESET ni reconectar USB.
+**El usuario rechazó también la estética de esta revisión; aún no está aprobada.** Los valores
+finales solicitados son LEDs Off y Buzzer All, todavía sin confirmar tras esta
+revisión.
+
+La imagen anterior, ZIP
+`711c33dc84666674d963efb480fd0ca75f1698762b2d44de69655951fec40c57`,
+se instaló y conectó correctamente. El usuario confirmó que los iconos se veían
+y funcionaban, pero rechazó su estética: parecían añadidos frente a las páginas
+de referencia. **No se registra como PASS visual.** La corrección `c8bbb5…`
+modifica únicamente presentación; conserva el código funcional validado de GPS
+sobre interruptor físico y radio de `13317e…`, sin exigir nuevas pruebas de esas
+funciones por este cambio visual ni afirmar mediciones nuevas.
 
 **Imagen anterior con la corrección de GPS físico:** ZIP SHA-256
 `13317e834cd4835b58febddcc82d2fca8ac0700d77c635b52af3423615c8230f`.
@@ -146,9 +156,11 @@ confirmar Atrás/centro y la página GPS informativa. No garantiza toda pulsaci�
 durante cualquier operación bloqueante.
 
 En `13317e…` siguen pendientes OTA con vínculo conservado y GATT BAS; radio
-bidireccional ya está aprobada. En `711c33…` pasaron instalación USB, retorno
-automático y conexión normal MeshCore; su confirmación visual está pendiente.
-Los demás resultados físicos permanecen atribuidos a sus imágenes originales.
+bidireccional ya está aprobada. `711c33…` funcionaba, pero el usuario rechazó
+su estética. En `c8bbb5…` pasaron transferencia USB y retorno automático; su
+estética fue rechazada y debe revisarse con Bluetooth como única referencia. No se añaden pruebas GPS/RF por un cambio exclusivamente
+visual; su código se conserva y los resultados físicos permanecen atribuidos
+a las imágenes realmente ensayadas.
 El arranque a batería según el switch y el fix exterior básico ya tienen
 confirmación en `13317e…`; todavía no hay una sesión prolongada a batería.
 En la imagen anterior `1f0e400…` también se habían observado fix con ocho
