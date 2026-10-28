@@ -14,7 +14,7 @@ persistente de LEDs en la interfaz. El perfil normal usa optimización de
 producción, sin comandos USB de diagnóstico ni trazas.
 Los binarios internos, datos del nodo y registros de desarrollo no se publican.
 
-**Corrección en preparación solicitada el 28 de octubre:** el GPS debe obedecer
+**Corrección compilada, aún pendiente de instalar, solicitada el 28 de octubre:** el GPS debe obedecer
 exclusivamente al interruptor físico (Mode 1 Off, Mode 2 On), también al arrancar.
 La página pasa a ser informativa y las escrituras de activación GPS por Companion
 se rechazan sin cambiar estado ni preferencias. La antigua preferencia guardada
@@ -23,11 +23,24 @@ pulso de detección al arrancar en Mode 1. Esta corrección necesita instalació
 verificación propias; los ensayos del ZIP `1f0e400…` siguen identificados como
 evidencia anterior, no como aprobación automática del nuevo binario.
 
+El nuevo ZIP tiene SHA-256
+`13317e834cd4835b58febddcc82d2fca8ac0700d77c635b52af3423615c8230f`;
+su UF2 corresponde a
+`c0b3ad9c763b6d055a1359a3d5b1771f7c7358aa1b87200403fe331456387212`.
+Código compilado: `949296ce97a79d5fa0b99deafe17ce8e9f869437`.
+Compilación ARM y auditoría UF2/DFU pasan, con 451.976 bytes de aplicación.
+Las regresiones Windows y ASan/UBSan Linux pasan: se compilan los métodos
+reales de inicialización y control del GPS contra dependencias simuladas, en
+SuperBase y en la variante heredada. Se comprueban arranque en ambos modos,
+ausencia de sondeo de encendido en Mode 1, sondeo de switch cada 200 ms y
+rollover, ausencia de arranques/paradas duplicados y rechazo de escrituras
+GPS sin efectos. Los demás ajustes delegados conservan su comportamiento.
+
 Los resultados físicos siguientes no se transfieren automáticamente a cada
 recompilación. Se identifica qué implementación se ensayó y qué falta repetir
 sobre el instalable final. Compilación y auditoría no certifican el hardware.
 
-El instalable de aplicación actual es el ZIP de producción con SHA-256
+El instalable de aplicación utilizado para las pruebas físicas siguientes es el ZIP de producción con SHA-256
 `1f0e400df7e9b6052608aed4380e55fe3183d0b6aba55f85cf15a4445b87d943`,
 compilado desde la revisión de código `4a7577d37612becba55ebc431ea71313ada2b999`.
 El UF2 correspondiente tiene SHA-256

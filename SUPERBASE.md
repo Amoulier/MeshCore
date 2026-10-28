@@ -63,8 +63,11 @@ la batería.
 ## Estado de validación
 
 La [matriz de implementación y pruebas](docs/superbase-rc1-validation.md) distingue
-el instalable exacto, pruebas de código, evidencia física y pendientes. El ZIP de
-producción ensayado tiene SHA-256
+el instalable exacto, pruebas de código, evidencia física y pendientes. El ZIP
+corregido para control GPS exclusivamente físico tiene SHA-256
+`13317e834cd4835b58febddcc82d2fca8ac0700d77c635b52af3423615c8230f`.
+Compila y pasa regresiones y auditoría; su instalación y prueba física están
+pendientes. La evidencia física de la imagen anterior corresponde al ZIP
 `1f0e400df7e9b6052608aed4380e55fe3183d0b6aba55f85cf15a4445b87d943`.
 La compilación es optimizada, sin interfaz Companion USB de diagnóstico ni trazas.
 Las imágenes debug y los registros internos no se distribuirán.
