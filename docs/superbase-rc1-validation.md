@@ -17,6 +17,11 @@ implementación. La compilación optimizada y la auditoría del paquete comprueb
 esta candidata; no convierten automáticamente esas pruebas anteriores en una
 certificación del binario nuevo. Por ello se publica como **prerelease**.
 
+La revisión publicada se comprobó en Windows y Linux/WSL; la compilación ARM y
+la auditoría de los instalables se realizaron en el entorno local. GitHub Actions
+no ejecutó el flujo nuevo, que todavía no existe en la rama predeterminada del
+repositorio. La publicación en GitHub no se presenta como una aprobación de CI.
+
 ## Matriz de implementación y verificación
 
 | Mejora acordada | Implementación | Verificación disponible y límite |

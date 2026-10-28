@@ -71,6 +71,12 @@ Linux/WSL también admite `python test/superbase/run.py --sanitize`. El flujo
 ejecuta las regresiones y audita los límites de flash/RAM y la coincidencia de
 aplicación UF2/DFU antes de producir el artefacto candidato.
 
+El flujo queda incluido en la rama candidata, pero GitHub Actions no lo ejecutó
+porque todavía no existe en la rama predeterminada del repositorio. Los archivos
+de esta publicación se compilaron y auditaron localmente desde la revisión
+publicada; las regresiones se ejecutaron en Windows y Linux/WSL. No se atribuye
+un resultado de CI a esta publicación.
+
 El soporte de hardware procede de MeshCore oficial, base
 `81dbae592ffad40b4212bc0b37e82b38da08f4bc`. Las mejoras adaptadas se basan en
 el alcance acordado del fork de Meshtastic, sin trasladar sus mecanismos de MQTT
