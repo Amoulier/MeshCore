@@ -45,8 +45,14 @@ en pantalla; esto no equivale a ensayar físicamente cada filtro de los tres
 modos selectivos.
 
 **GPS exterior y sesión a batería siguen pendientes sobre este instalable.**
-El usuario no puede realizarlos ahora. Se conserva la candidata revisable sin
-publicar y no se declara aprobada como estable.
+El 28 de octubre se retomó la observación: el usuario colocó el nodo en el
+exterior con GPS encendido y MeshCore conectó por Bluetooth a la RC1. Aún no
+se ha confirmado una posición válida ni la alimentación exclusivamente a
+batería en ese recorrido. La consola Companion reconoce versión y placa, pero
+no ofrece las consultas `power`, `gps diag` ni `sensor get gps` de CommonCLI;
+sus respuestas `Unknown command` no acreditan un fallo del GPS. No se cambió
+el firmware para añadir diagnósticos. Se conserva la candidata sin publicar y
+no se declara aprobada como estable.
 
 Se conserva como evidencia técnica el ciclo OTA anterior del ZIP de producción
 `ec7f774c2ac15d2d79518b49a2b2ee51bf0ad09b35e47185528d8670f7bc7e50`
@@ -77,11 +83,11 @@ el mismo evento de emparejamiento y conexión MeshCore sin una nueva solicitud.
 | Seis controles y Atrás para apagar pantalla | Captura de flancos, rebotes, pulsación larga, triple Atrás y sondeo alternativo; regresiones. En `1f0e400…`, el usuario confirmó los seis controles, Atrás para apagar y centro para despertar. El CLICK corto de Atrás se consume y no despierta una pantalla ya apagada. Triple Atrás y pulsación larga se conservan. Captura interna previa: máscara 63, dos flancos adicionales por control, cero descartes. | No queda pendiente la confirmación de las seis acciones actuales; no se afirma captura infalible de toda pulsación breve durante cualquier operación bloqueante. |
 | LEDs desde la pantalla, solicitud nueva | Página LEDs junto a sonido, centro alterna On/Off y guarda `comp.led_en`, predeterminado On. Verde P1.03/GPIO 35; azul P1.04/GPIO 36 se mantiene apagado. En `1f0e400…`, On restauró el parpadeo verde y persistió tras RESET; Off lo detuvo, persistió tras RESET y sobrevivió a OTA. Durante los DMs silencioso y audible, el usuario confirmó ausencia de destello verde con LEDs Off. | Recorridos On/Off y persistencia aprobados. Rojo de carga y destellos del cargador de arranque quedan fuera; véanse los límites de hardware. |
 | GPS | Mode 2 y preferencia de software, control de arranque y descarte de posición antigua. Imagen interna: 28 muestras durante 309,6 s a batería, 16–19 satélites y sin reinicios observados. | Nueva adquisición exterior y alternancia física en el instalable final. No se promete recepción interior. |
-| Energía y apagado | Reposo IMU/magnetómetro, parada de buzzer/pantalla/GPS y arranque a batería observados en imágenes internas. | Arranque y sesión a batería en el instalable actual: el usuario no puede realizarlos ahora. Sesión prolongada, descarga completa y consumo instrumental sin medir. |
+| Energía y apagado | Reposo IMU/magnetómetro, parada de buzzer/pantalla/GPS y arranque a batería observados en imágenes internas. | Confirmar alimentación exclusivamente a batería, arranque y sesión en el instalable actual. Sesión prolongada, descarga completa y consumo instrumental sin medir. |
 | Preferencias | Temporal + rename, reintento y vaciado previo; pruebas de apertura, escritura incompleta, borrado y rename fallidos. En `1f0e400…`, LEDs On/Off, Bluetooth Off y buzzer Off persistieron tras RESET; LEDs Off también durante OTA. Radio e identidad se conservaron. | Preferencia y alternancia GPS en el recorrido exterior; corte de alimentación durante escritura sin ensayar. Contactos heredados no informan todos sus errores; no hay transacción conjunta. |
 | Radio SX1262 | Recuperación RX y protección TX con fallos simulados. En el instalable actual `1f0e400…`, SuperBase → Heltec V4 y V4 → SuperBase quedaron Delivered y se vieron en el receptor; se comprobó recepción con buzzer Off y con All, conservando LEDs Off. No se modificaron parámetros de radio. | Mensajería bidireccional actual aprobada; alcance máximo y fallo físico inducido sin ensayar. |
 | Actualización Bluetooth | Guardado previo, corrección de USB y RAM de intercambio, autorización S140 y entrada cifrada con vínculo compartido. Ambos arreglos CCCD pasan pruebas nativas, sanitizadores y ARM. **Ciclo actual aprobado:** ZIP `1f0e400…`, cargador `v2.3-muzi.2-rc1` SHA `5d8163…`, Nordic predeterminado, USB automático en 49,24 s y reconexión con el mismo último BONDED `00:07:18.398`, sin nuevo PIN, RESET, reconectar USB ni cambiar ajustes del teléfono. LEDs Off sobrevivió. | Un ciclo completo con USB aprobado para esta pareja exacta de app/cargador. No acredita autonomía ni otras combinaciones de cargador/teléfono. Una nueva petición de emparejamiento sería un fallo, no un paso normal. |
-| Emojis | UTF-8, 3.953 secuencias OpenMoji 17, recorte y saltos sin partir secuencias. Catálogo y límites con sanitizadores. Usuario confirmó joystick en nombre real y pantalla RC1. | Repetición visual final. Monocromo de 10 × 10: no conserva color ni todo el detalle. |
+| Emojis | UTF-8, 3.953 secuencias OpenMoji 17, recorte y saltos sin partir secuencias. Catálogo y límites con sanitizadores. Usuario confirmó joystick en nombre real y pantalla RC1 actual. | Confirmación visual del joystick aprobada; no se ensayaron físicamente los 3.953 pictogramas. Monocromo de 10 × 10: no conserva color ni todo el detalle. |
 | RTC | Se conserva el reloj heredado. Lectura y avance de segundos RX8130CE observados en imagen interna. | Precisión y retención no medidas; no se añade otra integración de hora. |
 
 ## Fallos y efecto real
@@ -180,10 +186,12 @@ pendientes; estos archivos siguen sin publicar.**
 
 1. Completar nueva adquisición GPS exterior, con Mode 2, y alternancia de la
    preferencia GPS sobre el instalable actual. Completar arranque y sesión a
-   batería. **El usuario no puede hacer estas pruebas ahora; no se publicará.**
+   batería. **La observación exterior se retomó; todavía no hay evidencia
+   suficiente para aprobar estas pruebas y no se publicará.**
 2. Distinguir el porcentaje mostrado por Android de la comprobación GATT BAS,
    cuya lectura/notificación física final sigue pendiente. Completar el recorrido
-   visual final de emojis y los filtros físicos de los modos selectivos del buzzer.
+   físico de los modos selectivos del buzzer. La confirmación visual del joystick
+   del nombre ya está aprobada en la imagen actual.
 3. Mantener como aprobados en `1f0e400…` OTA con vínculo conservado, radio en
    ambos sentidos, seis controles, Atrás/centro, ausencia del aviso falso de carga,
    LEDs On/Off persistentes, Bluetooth Off/RESET/On y buzzer Off/RESET. No volver

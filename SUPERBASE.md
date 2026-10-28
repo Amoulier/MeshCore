@@ -98,7 +98,9 @@ funcional actual confirma sus acciones; no garantiza toda pulsación muy breve
 durante cualquier operación bloqueante.
 
 Siguen pendientes GPS exterior y arranque/sesión a batería sobre el instalable
-actual; el usuario no puede realizarlos ahora. Quedan además las comprobaciones
+actual. La observación exterior se retomó el 28 de octubre con conexión Bluetooth
+comprobada, pero aún sin confirmar una posición válida ni alimentación solo a
+batería. Quedan además las comprobaciones
 específicas identificadas en la matriz, como GATT BAS y filtros selectivos del buzzer.
 No hay medición instrumental de consumo, descarga completa, alcance máximo ni
 ensayos eléctricos inducidos. El ciclo OTA con USB no aprueba autonomía ni otras
