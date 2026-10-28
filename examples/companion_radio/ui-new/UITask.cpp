@@ -1018,7 +1018,14 @@ void UITask::loop() {
   const char keys[] = {KEY_ENTER, char(KEY_LEFT), char(KEY_RIGHT), char(KEY_PREV), char(KEY_NEXT), KEY_CANCEL};
   for (uint8_t i = 0; i < 6; i++) {
     int event = buttons[i]->check();
-    if (event == BUTTON_EVENT_CLICK) c = checkDisplayOn(keys[i]);
+    if (event == BUTTON_EVENT_CLICK) {
+      if (i == 5) {
+        // A short Back press sleeps the screen and consumes the input.
+        if (_display != NULL && _display->isOn()) _display->turnOff();
+      } else {
+        c = checkDisplayOn(keys[i]);
+      }
+    }
     if (event == BUTTON_EVENT_LONG_PRESS) c = handleLongPress(keys[i]);
     if (event == BUTTON_EVENT_TRIPLE_CLICK && i == 5) c = handleTripleClick(KEY_SELECT);
     if (event != BUTTON_EVENT_NONE) break;
