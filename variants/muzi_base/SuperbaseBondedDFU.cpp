@@ -56,10 +56,20 @@ void SuperbaseBondedDFU::authorize(uint16_t handle, BLECharacteristic* character
   ble_gatts_rw_authorize_reply_params_t reply = {};
   reply.type = BLE_GATTS_AUTHORIZE_TYPE_WRITE;
   reply.params.write.gatt_status = status;
+  if (status == BLE_GATT_STATUS_SUCCESS) {
+    // S140 requires update=1 and the write payload for a successful authorization.
+    reply.params.write.update = 1;
+    reply.params.write.offset = request->offset;
+    reply.params.write.len = request->len;
+    reply.params.write.p_data = request->data;
+  }
   SB_DFU_TRACE("SBDFU auth len=%u status=%u\n", request ? request->len : 0, status);
-  if (sd_ble_gatts_rw_authorize_reply(handle, &reply) == NRF_SUCCESS && status == BLE_GATT_STATUS_SUCCESS) {
+  const uint32_t result = sd_ble_gatts_rw_authorize_reply(handle, &reply);
+  SB_DFU_TRACE("SBDFU ATT reply=%lu\n", (unsigned long)result);
+  if (result == NRF_SUCCESS && status == BLE_GATT_STATUS_SUCCESS) {
     _instance->_request.store(handle);
     superbase_dfu_state = SuperbaseDfuState::Requested;
+    SB_DFU_TRACE("SBDFU request queued\n");
   }
 }
 
@@ -69,21 +79,15 @@ void SuperbaseBondedDFU::process() {
       (superbase_dfu_state != SuperbaseDfuState::Ready && superbase_dfu_state != SuperbaseDfuState::Rejected)) return;
   const bool saved = superbase_dfu_state == SuperbaseDfuState::Ready;
   SB_DFU_TRACE("SBDFU process saved=%u conn=%u\n", saved, handle);
-  const uint8_t response[] = {0x20, 0x01, uint8_t(saved ? 0x01 : 0x04)};
-  // Indications wait for HVC: run on the application task, never the BLE callback.
-  // Failed storage, a lost link or missing confirmation must never enter DFU.
   const bool trusted = trustedConnection(handle);
-  SB_DFU_TRACE("SBDFU indicate begin trusted=%u\n", trusted);
-  const bool indicated = trusted && _control.indicate(handle, response, sizeof(response));
-  SB_DFU_TRACE("SBDFU indicate confirmed=%u\n", indicated);
-  if (indicated && saved) {
+  bool cacheReady = false;
+  if (trusted && saved) {
     // The installed Legacy loader cannot invalidate the application's larger
     // GATT table reliably. Clear that cache while this application still owns
     // the valid handles; wait for the peer's confirmation without removing its bond.
     _cacheConfirmed.store(BLE_CONN_HANDLE_INVALID);
     const bool validRange = superbase_dfu_control_handle >= 4 &&
       superbase_gatt_last_handle >= superbase_dfu_control_handle;
-    bool cacheReady = false;
     if (validRange) {
       superbase_service_changed_status = sd_ble_gatts_service_changed(handle,
         superbase_dfu_control_handle - 4, superbase_gatt_last_handle);
@@ -96,6 +100,14 @@ void SuperbaseBondedDFU::process() {
         SB_DFU_TRACE("SBDFU cache confirmed=%u\n", cacheReady);
       }
     }
+  }
+  const uint8_t response[] = {0x20, 0x01, uint8_t(saved && cacheReady ? 0x01 : 0x04)};
+  // Confirm cache invalidation before promising a jump to the updater.
+  // Indications wait for HVC: run on the application task, never the BLE callback.
+  SB_DFU_TRACE("SBDFU indicate begin trusted=%u status=%u\n", trusted, response[2]);
+  const bool indicated = trusted && _control.indicate(handle, response, sizeof(response));
+  SB_DFU_TRACE("SBDFU indicate confirmed=%u\n", indicated);
+  if (indicated && saved && cacheReady) {
     // This is the last fallible step before the original encrypted handoff.
     // A failure leaves the application running, with USB notifications restored
     // by PrepareUsb; the updater cannot report a completed firmware transfer.

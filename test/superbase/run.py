@@ -19,11 +19,13 @@ args = parser.parse_args()
 patch_dfu = runpy.run_path(str(root / "superbase-dfu.py"))["patch_bledfu"]
 anchor = "peer_data->crc16 = crc16((uint8_t*) peer_data, offsetof(peer_data_t, crc16));"
 fixture = ("static void bledfu_control_wr_authorize_cb() {\n"
+           "reply.params.write.gatt_status = BLE_GATT_STATUS_SUCCESS;\n"
            "      // Peer data information so that bootloader could re-connect after reboot\n" + anchor +
            "\n      bootloader_util_app_start(NRF_UICR->NRFFW[0]);\n}")
 patched = patch_dfu(fixture)
 assert patched.count("superbaseDfuAdaptPeerHandoff();") == 2
 assert patched.count("superbaseDfuJumpToBootloader(") == 2
+assert patched.count("reply.params.write.update = 1;") == 1
 for incompatible in ("changed", fixture + anchor, fixture.replace("bootloader_util_app_start", "changed")):
     try:
         patch_dfu(incompatible)

@@ -18,13 +18,19 @@ using err_t = int;
 #define CHR_PROPS_INDICATE 0x20
 #define SECMODE_ENC_WITH_MITM 3
 struct ble_gatts_evt_write_t { uint16_t len = 1; uint8_t op = 1; uint8_t data[3] = {1,4,0}; uint16_t handle = 1; uint16_t offset = 0; };
-struct ble_gatts_rw_authorize_reply_params_t { int type; struct { int gatt_status; } params_write_unused; struct { struct { int gatt_status; } write; } params; };
+struct ble_gatts_rw_authorize_reply_params_t {
+  int type;
+  struct { struct { int gatt_status; uint8_t update; uint16_t offset, len; const uint8_t* p_data; } write; } params;
+};
 inline int mock_authorize_error = 0, mock_dfu_calls = 0;
 inline int mock_authorize_result = 0;
 inline int mock_usb_prepare_calls = 0;
 inline bool mock_usb_prepare_ok = true;
 inline int sd_ble_gatts_rw_authorize_reply(uint16_t, ble_gatts_rw_authorize_reply_params_t* reply) {
   mock_authorize_error = reply->params.write.gatt_status;
+  // Match the mandatory S140 write-authorization contract, not just ATT status.
+  if (reply->params.write.gatt_status == BLE_GATT_STATUS_SUCCESS &&
+      (!reply->params.write.update || !reply->params.write.len || !reply->params.write.p_data)) return 7;
   return mock_authorize_result;
 }
 class BLECharacteristic;
@@ -95,12 +101,16 @@ protected:
   BLECharacteristic _chr_control;
 public:
   virtual err_t begin() {
-    _chr_control.setWriteAuthorizeCallback([](uint16_t handle, BLECharacteristic*, ble_gatts_evt_write_t*) {
+    _chr_control.setWriteAuthorizeCallback([](uint16_t handle, BLECharacteristic*, ble_gatts_evt_write_t* request) {
       assert(mock_usb_prepare_calls > 0);
       ++mock_dfu_calls;
       ble_gatts_rw_authorize_reply_params_t reply = {};
       reply.type = BLE_GATTS_AUTHORIZE_TYPE_WRITE;
       reply.params.write.gatt_status = BLE_GATT_STATUS_SUCCESS;
+      reply.params.write.update = 1;
+      reply.params.write.offset = request->offset;
+      reply.params.write.len = request->len;
+      reply.params.write.p_data = request->data;
       sd_ble_gatts_rw_authorize_reply(handle, &reply);
     });
     mock_dfu_control = &_chr_control;

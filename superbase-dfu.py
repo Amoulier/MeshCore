@@ -7,10 +7,15 @@ def patch_bledfu(source):
     start = "      // Peer data information so that bootloader could re-connect after reboot"
     end = "      bootloader_util_app_start(NRF_UICR->NRFFW[0]);"
     callback = "static void bledfu_control_wr_authorize_cb("
-    if any(source.count(marker) != 1 for marker in (anchor, start, end, callback)):
+    success = "reply.params.write.gatt_status = BLE_GATT_STATUS_SUCCESS;"
+    if any(source.count(marker) != 1 for marker in (anchor, start, end, callback, success)):
         raise RuntimeError("Bluefruit DFU changed: review the SuperBase handoff hook before building")
     source = source.replace(anchor, anchor + "\n      extern void superbaseDfuAdaptPeerHandoff();"
                             "\n      superbaseDfuAdaptPeerHandoff();")
+    source = source.replace(success, success + "\n    reply.params.write.update = 1;"
+                            "\n    reply.params.write.offset = request->offset;"
+                            "\n    reply.params.write.len = request->len;"
+                            "\n    reply.params.write.p_data = request->data;")
     first, last = source.index(start), source.index(end) + len(end)
     if first >= last or first < source.index(callback):
         raise RuntimeError("Unexpected Bluefruit DFU handoff layout")
