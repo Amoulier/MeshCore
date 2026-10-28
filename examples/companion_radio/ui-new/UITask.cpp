@@ -408,9 +408,8 @@ public:
           _node_prefs->superbase_buzzer_mode == superbase::Silent ? superbase_buzzer_off : superbase_buzzer_on,
           32, 32);
       display.setColor(UIColor::secondary_txt);
-      snprintf(tmp, sizeof(tmp), "Buzzer: %s", superbase::soundLabel(_node_prefs->superbase_buzzer_mode));
+      snprintf(tmp, sizeof(tmp), "%s: " PRESS_LABEL, superbase::soundLabel(_node_prefs->superbase_buzzer_mode));
       display.drawTextCentered(display.width()/2, 64 - 11, tmp);
-      display.drawTextCentered(display.width()/2, 65, "press: change mode");
     } else if (_page == HomePage::LEDS) {
       display.setTextSize(1);
       display.setColor(UIColor::corp_blue);
@@ -418,8 +417,7 @@ public:
           board.areLedsEnabled() ? superbase_led_on : superbase_led_off,
           32, 32);
       display.setColor(UIColor::secondary_txt);
-      display.drawTextCentered(display.width()/2, 64 - 11, board.areLedsEnabled() ? "LEDs: On" : "LEDs: Off");
-      display.drawTextCentered(display.width()/2, 65, "press: toggle");
+      display.drawTextCentered(display.width()/2, 64 - 11, "toggle: " PRESS_LABEL);
 #endif
     } else if (_page == HomePage::ADVERT) {
       display.setColor(UIColor::corp_blue);

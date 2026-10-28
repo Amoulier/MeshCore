@@ -18,6 +18,7 @@ SuperBase**. No usar perfiles Base Duo/LR1121 en este modelo Base Uno/SX1262.
 - Seis controles con captura de flancos, filtrado de rebotes y sondeo alternativo.
 - Atrás para apagar la pantalla y centro para despertarla.
 - Página LEDs con preferencia On/Off persistente.
+- Páginas LEDs y Buzzer con iconos originales 32 × 32 On/Off, estado y acción debajo.
 - GPS controlado exclusivamente por el interruptor físico: Mode 1 apagado,
   Mode 2 encendido. Su página es informativa.
 - Reposo de sensores sin uso en Companion y preparación de apagado.
@@ -26,8 +27,9 @@ SuperBase**. No usar perfiles Base Duo/LR1121 en este modelo Base Uno/SX1262.
   usando el cargador compatible indicado más abajo.
 - Emojis monocromos en nombres, contactos y mensajes: 3.953 secuencias OpenMoji.
 
-Atrás para apagar pantalla, el control de LEDs y el GPS exclusivamente físico se
-incorporaron por solicitud expresa durante la validación. Se conservan el
+Atrás para apagar pantalla, el control de LEDs, el GPS exclusivamente físico y
+el ajuste visual de LEDs/Buzzer se incorporaron por solicitud expresa durante
+la validación. Se conservan el
 protocolo MeshCore y los datos
 guardados del usuario. El alcance no incluye teclado autónomo ni brújula.
 
@@ -47,6 +49,11 @@ guarda. On recupera el parpadeo verde normal; Off lo suprime. La preferencia se
 restaura tras reiniciar. Bluetooth y sonido tienen sus propias páginas y
 preferencias; apagar los LEDs no apaga Bluetooth ni la radio.
 
+En la imagen visual instalada, LEDs y Buzzer usan iconos monocromos originales
+de 32 × 32 con variantes On/Off, centrados como Bluetooth, Hibernate y Advert.
+El estado y la instrucción aparecen debajo. Es un cambio de presentación: se
+conservan las políticas de LEDs/sonido y el control GPS exclusivamente físico.
+
 ### Límites del control de LEDs
 
 La opción controla los indicadores MCU durante la aplicación: verde en
@@ -64,8 +71,21 @@ la batería.
 ## Estado de validación
 
 La [matriz de implementación y pruebas](docs/superbase-rc1-validation.md) distingue
-el instalable exacto, pruebas de código, evidencia física y pendientes. El ZIP
-corregido para control GPS exclusivamente físico tiene SHA-256
+el instalable exacto, pruebas de código, evidencia física y pendientes.
+
+**Actualmente instalada:** la imagen con los iconos tiene ZIP SHA-256
+`711c33dc84666674d963efb480fd0ca75f1698762b2d44de69655951fec40c57`,
+UF2 SHA-256
+`cc3e4cc399b1efa6675f42d524bb0a1f92e3bd53924712224936cd36a7ca9b9d`
+y código compilado `e6571ba59a8a337d75f1ede402cada19c4be69ad`.
+ARM y auditoría UF2/DFU pasan, con 452.440 bytes de aplicación. Se inspeccionó
+la hoja local de comparación. La instalación USB y el retorno automático al
+firmware pasaron; MeshCore Android conectó sin nuevo emparejamiento manual.
+Falta la respuesta del usuario para confirmar físicamente los iconos y su
+legibilidad. Solo cambia el renderizado de LEDs/Buzzer y sus bitmaps respecto
+al código anterior; no cambia GPS ni las políticas.
+
+**Imagen anterior con la corrección de GPS físico:** ZIP SHA-256
 `13317e834cd4835b58febddcc82d2fca8ac0700d77c635b52af3423615c8230f`.
 Código compilado: `949296ce97a79d5fa0b99deafe17ce8e9f869437`.
 Su UF2 tiene SHA-256
@@ -78,7 +98,7 @@ de la imagen anterior corresponde al ZIP
 La compilación es optimizada, sin interfaz Companion USB de diagnóstico ni trazas.
 Las imágenes debug y los registros internos no se distribuirán.
 
-Comprobaciones físicas de la imagen actual `13317e…`:
+Comprobaciones físicas de la imagen anterior `13317e…`:
 
 - Mode 2 muestra GPS On; centro en la página no lo cambia. Mode 1 muestra GPS
   Off/no fix y centro tampoco lo cambia.
@@ -91,6 +111,9 @@ Comprobaciones físicas de la imagen actual `13317e…`:
   para despertarla, confirmados por el usuario.
 - LEDs Off conservado después de instalar por USB. Esto todavía no repite la
   persistencia de On tras RESET ni Off durante OTA en esta imagen.
+- Radio bidireccional con Heltec V4: `RC1-GPS-SB-V4-01` quedó Delivered y se vio
+  en V4; `RC1-GPS-V4-SB-01` quedó Delivered y se vio en SuperBase. No se pulsó
+  RESET antes de leer las recepciones.
 
 Evidencia física anterior, exclusivamente del ZIP `1f0e400…`:
 
@@ -112,7 +135,7 @@ Evidencia física anterior, exclusivamente del ZIP `1f0e400…`:
   ausencia de destello verde. Otra respuesta recibida con buzzer All quedó
   Delivered y produjo aviso audible; el verde siguió apagado.
 
-El porcentaje de batería visible en la app Android actual no sustituye la
+Los porcentajes de batería visibles en la app Android no sustituyen la
 comprobación del servicio GATT BAS: las lecturas/notificaciones BAS documentadas
 se obtuvieron con imágenes internas anteriores y falta repetirlas en esta imagen.
 
@@ -122,9 +145,12 @@ funcional de `1f0e400…` confirmó las seis acciones; en `13317e…` se volvier
 confirmar Atrás/centro y la página GPS informativa. No garantiza toda pulsación muy breve
 durante cualquier operación bloqueante.
 
-En `13317e…` siguen pendientes OTA con vínculo conservado, radio bidireccional y
-GATT BAS. El arranque a batería según el switch y el fix exterior básico ya tienen
-confirmación física actual; todavía no hay una sesión prolongada a batería.
+En `13317e…` siguen pendientes OTA con vínculo conservado y GATT BAS; radio
+bidireccional ya está aprobada. En `711c33…` pasaron instalación USB, retorno
+automático y conexión normal MeshCore; su confirmación visual está pendiente.
+Los demás resultados físicos permanecen atribuidos a sus imágenes originales.
+El arranque a batería según el switch y el fix exterior básico ya tienen
+confirmación en `13317e…`; todavía no hay una sesión prolongada a batería.
 En la imagen anterior `1f0e400…` también se habían observado fix con ocho
 satélites y alternancia por switch. A petición del usuario, la corrección elimina
 el control de GPS por software y su dependencia de la preferencia guardada.
