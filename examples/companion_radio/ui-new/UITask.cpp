@@ -425,7 +425,7 @@ public:
       char buf[50];
       int y = 18;
       bool gps_state = _task->getGPSState();
-#ifdef PIN_GPS_SWITCH
+#if defined(PIN_GPS_SWITCH) && !defined(MUZI_BASE_SUPERIO)
       bool hw_gps_state = digitalRead(PIN_GPS_SWITCH);
       if (gps_state != hw_gps_state) {
         strcpy(buf, gps_state ? "gps off(hw)" : "gps off(sw)");
@@ -466,6 +466,10 @@ public:
         display.drawTextRightAlign(display.width()-1, y, buf);
         y = y + 12;
       }
+#ifdef MUZI_BASE_SUPERIO
+      display.setColor(UIColor::secondary_txt);
+      display.drawTextCentered(display.width()/2, display.height()-11, "Mode 1:Off  2:On");
+#endif
 #endif
 #if UI_SENSORS_PAGE == 1
     } else if (_page == HomePage::SENSORS) {
@@ -1261,6 +1265,9 @@ bool UITask::getGPSState() {
 }
 
 void UITask::toggleGPS() {
+#ifdef MUZI_BASE_SUPERIO
+  showAlert("Use Mode 1/2 switch", 1000);
+#else
     if (_sensors != NULL) {
     // toggle GPS on/off
     int num = _sensors->getNumSettings();
@@ -1282,6 +1289,7 @@ void UITask::toggleGPS() {
       }
     }
   }
+#endif
 }
 
 void UITask::toggleBuzzer() {

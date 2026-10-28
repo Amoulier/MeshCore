@@ -215,7 +215,9 @@ public:
 
 #if ENV_INCLUDE_GPS == 1
   void applyGpsPrefs() {
+#ifndef MUZI_BASE_SUPERIO
     sensors.setSettingValue("gps", _prefs.gps_enabled ? "1" : "0");
+#endif
     if (_prefs.gps_interval > 0) {
       char interval_str[12];  // Max: 24 hours = 86400 seconds (5 digits + null)
       sprintf(interval_str, "%u", _prefs.gps_interval);

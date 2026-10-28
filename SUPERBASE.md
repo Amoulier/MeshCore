@@ -18,7 +18,8 @@ SuperBase**. No usar perfiles Base Duo/LR1121 en este modelo Base Uno/SX1262.
 - Seis controles con captura de flancos, filtrado de rebotes y sondeo alternativo.
 - Atrás para apagar la pantalla y centro para despertarla.
 - Página LEDs con preferencia On/Off persistente.
-- GPS sujeto a Mode 2 y a la preferencia GPS del menú.
+- GPS controlado exclusivamente por el interruptor físico: Mode 1 apagado,
+  Mode 2 encendido. Su página es informativa.
 - Reposo de sensores sin uso en Companion y preparación de apagado.
 - Guardado de preferencias mediante archivo temporal y recuperación RX de radio.
 - Actualización Bluetooth con arranque automático y conservación del vínculo,
@@ -98,9 +99,12 @@ funcional actual confirma sus acciones; no garantiza toda pulsación muy breve
 durante cualquier operación bloqueante.
 
 Siguen pendientes GPS exterior y arranque/sesión a batería sobre el instalable
-actual. La observación exterior se retomó el 28 de octubre con conexión Bluetooth
-comprobada, pero aún sin confirmar una posición válida ni alimentación solo a
-batería. Quedan además las comprobaciones
+actual de la corrección del GPS. En la imagen anterior `1f0e400…`, el usuario
+confirmó fix con ocho satélites a batería, apagado en Mode 1 y nueva adquisición
+en Mode 2. A petición del usuario, la fuente ahora elimina el control de GPS por
+software y su dependencia de la preferencia guardada. Esta corrección requiere
+su propia compilación, instalación y prueba; los resultados anteriores no se
+transfieren automáticamente. Quedan además las comprobaciones
 específicas identificadas en la matriz, como GATT BAS y filtros selectivos del buzzer.
 No hay medición instrumental de consumo, descarga completa, alcance máximo ni
 ensayos eléctricos inducidos. El ciclo OTA con USB no aprueba autonomía ni otras
@@ -145,9 +149,12 @@ el valor alternativo de compilación `123456` puede diferir del PIN activo.
 conservación del vínculo.** No se indica borrar el emparejamiento ni introducir
 otro PIN como parte normal de esta actualización.
 
-GPS requiere Mode 2 y habilitación en el menú. La recepción dentro de edificios
-no está garantizada; se obtuvo posición exterior en la implementación anterior,
-pendiente de repetir en esta imagen. La radio conserva los parámetros guardados.
+El interruptor físico controla el GPS: Mode 1 lo apaga y Mode 2 lo enciende,
+también al arrancar. La página GPS muestra estado y satélites; pulsar centro no
+cambia su alimentación. Las solicitudes de encendido/apagado por software se
+rechazan; la antigua preferencia GPS se conserva para compatibilidad de datos
+y se ignora como control. La recepción dentro de edificios no está garantizada.
+La radio conserva los parámetros guardados.
 El valor de compilación para nodos sin configurar sigue siendo 869.618 MHz;
 este fork no selecciona una región.
 

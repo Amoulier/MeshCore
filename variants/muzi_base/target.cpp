@@ -43,6 +43,11 @@ bool MuziBaseSensorManager::begin() {
   pinMode(PIN_GPS_SWITCH, INPUT);
   _last_gps_sw = digitalRead(PIN_GPS_SWITCH);   // initial gps state from the switch
   if (gps_active) stop_gps();
+#ifdef MUZI_BASE_SUPERIO
+  // SuperBase GPS is controlled exclusively by the physical mode switch.
+  // A legacy saved software preference must not prevent a Mode 2 startup.
+  if (_last_gps_sw == HIGH) start_gps();
+#endif
 #endif
   return ok;
 }
@@ -62,7 +67,11 @@ void MuziBaseSensorManager::loop() {
     int sw = digitalRead(PIN_GPS_SWITCH);
     if (sw != _last_gps_sw) {
       _last_gps_sw = sw;
+#ifdef MUZI_BASE_SUPERIO
+      bool enabled = sw == HIGH;
+#else
       bool enabled = sw == HIGH && _software_gps_enabled;
+#endif
       if (enabled && !gps_active) start_gps();
       if (!enabled && gps_active) stop_gps();
     }
@@ -74,11 +83,17 @@ void MuziBaseSensorManager::loop() {
 #if ENV_INCLUDE_GPS
 bool MuziBaseSensorManager::setSettingValue(const char* name, const char* value) {
   if (strcmp(name, "gps") != 0) return EnvironmentSensorManager::setSettingValue(name, value);
+#ifdef MUZI_BASE_SUPERIO
+  // Report the switch state through getSettingValue(), but do not allow
+  // Companion software requests to override it or persist another GPS gate.
+  return false;
+#else
   _software_gps_enabled = strcmp(value, "1") == 0;
   bool enabled = _software_gps_enabled && digitalRead(PIN_GPS_SWITCH) == HIGH;
   if (enabled && !gps_active) start_gps();
   if (!enabled && gps_active) stop_gps();
   return true;
+#endif
 }
 #endif
 

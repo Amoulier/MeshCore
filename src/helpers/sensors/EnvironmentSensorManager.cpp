@@ -757,6 +757,14 @@ void EnvironmentSensorManager::initBasicGPS() {
   Serial1.begin(9600);
   #endif
 
+#ifdef MUZI_BASE_SUPERIO
+  // The integrated receiver needs no power-on probe. Its mode switch is
+  // applied by MuziBaseSensorManager after initialization, including Mode 1.
+  gps_detected = true;
+  gps_active = false;
+  return;
+#endif
+
   // Try to detect if GPS is physically connected to determine if we should expose the setting
   _location->begin();
   _location->reset();

@@ -48,7 +48,9 @@ class MuziBaseSensorManager : public EnvironmentSensorManager {
 #if ENV_INCLUDE_GPS
   int _last_gps_sw = -1;
   unsigned long _next_sw_check = 0;
+#ifndef MUZI_BASE_SUPERIO
   bool _software_gps_enabled = false;
+#endif
 #endif
 public:
 #if ENV_INCLUDE_GPS

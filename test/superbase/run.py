@@ -58,10 +58,39 @@ for incompatible in (
 compiler = shutil.which("g++")
 if not compiler:
     raise SystemExit("Install g++ to run the SuperBase regressions")
+
+def unique_section(source, start, end):
+    """Compile real production methods; source layout changes must fail closed."""
+    if source.count(start) != 1 or source.count(end) != 1:
+        raise AssertionError("GPS production extraction anchors changed or are ambiguous")
+    begin = source.index(start)
+    finish = source.index(end, begin)
+    return source[begin:finish]
+
+gps_declaration = unique_section(
+    (root / "variants/muzi_base/target.h").read_text(encoding="utf-8"),
+    "class MuziBaseSensorManager : public EnvironmentSensorManager {",
+    "extern MuziBaseSensorManager sensors;")
+gps_methods = unique_section(
+    (root / "variants/muzi_base/target.cpp").read_text(encoding="utf-8"),
+    "bool MuziBaseSensorManager::begin() {", "\n#ifdef DISPLAY_CLASS\n")
+gps_initialization = unique_section(
+    (root / "src/helpers/sensors/EnvironmentSensorManager.cpp").read_text(encoding="utf-8"),
+    "void EnvironmentSensorManager::initBasicGPS() {",
+    "\n// gps code for rak might be moved to MicroNMEALoactionProvider")
+gps_production = gps_declaration + "\n" + gps_methods + "\n" + gps_initialization
+
 with tempfile.TemporaryDirectory(prefix="superbase-tests-") as output:
     common = [compiler, "-std=c++17", "-Wall", "-Wextra", "-Wno-unused-parameter",
               *(["-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-g"] if args.sanitize else []),
               "-DMUZI_BASE_SUPERIO", "-Itest/superbase/mocks", "-Isrc", "-Ivariants/muzi_base"]
+    (Path(output) / "gps-production.inc").write_text(gps_production, encoding="utf-8")
+    for superio in (True, False):
+        executable = Path(output) / ("gps-switch-" + str(superio) + ".exe")
+        gps_flags = common if superio else [flag for flag in common if flag != "-DMUZI_BASE_SUPERIO"]
+        subprocess.run([*gps_flags, "-I" + output, "test/superbase/gps_switch.cpp",
+                        "-o", str(executable)], cwd=root, check=True)
+        subprocess.run([str(executable)], check=True)
     (Path(output) / "patched-bonding.inc").write_text(patched_bonding)
     executable = Path(output) / "bonding-storage.exe"
     subprocess.run([*common, "-Itest/superbase/bonding_mocks", "-I" + output,
