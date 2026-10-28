@@ -4,9 +4,9 @@
 #include <iostream>
 #include "SuperbaseDfuPeer.h"
 
-int main() {
+void verify(const uint8_t* expected) {
   std::array<uint8_t, sizeof(superbase::muzi_peer_verifier)> verifier;
-  std::memcpy(verifier.data(), superbase::muzi_peer_verifier, verifier.size());
+  std::memcpy(verifier.data(), expected, verifier.size());
   std::array<uint8_t, 64> record;
   record.fill(0xEE);
   for (unsigned i = 0; i < 60; ++i) record[i] = uint8_t(i);
@@ -23,5 +23,10 @@ int main() {
   assert(record[0] == 0xA4 && record[1] == 0xBA);
   for (unsigned i = 0; i < 60; ++i) assert(record[i + 2] == i);
   assert(record[62] == 0xEE && record[63] == 0xEE);
+}
+
+int main() {
+  verify(superbase::muzi_peer_verifier);
+  verify(superbase::muzi_gatt_review_peer_verifier);
   std::cout << "PASS: exact bootloader ABI match, unknown-loader isolation and overlapping peer relocation\n";
 }
