@@ -29,8 +29,17 @@ void MuziBaseBoard::begin() {
   NRF52BoardDCDC::begin();
   pinMode(PIN_VBAT_READ, INPUT);
   _charger.begin();
+#ifdef MUZI_BASE_SUPERIO
+  // Set inactive latches before output mode so application startup cannot flash
+  // the LEDs while waiting to restore the user's preference.
+  digitalWrite(LED_PIN, !LED_STATE_ON);
+  digitalWrite(PIN_SUPERBASE_LED_BLUE, !LED_STATE_ON);
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(PIN_SUPERBASE_LED_BLUE, OUTPUT);
+#else
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
+#endif
   // output latches default to HIGH, so pull these low right after enabling
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
@@ -91,6 +100,20 @@ void MuziBaseBoard::begin() {
   checkBootVoltage(&power_config);
 #endif
 }
+
+#ifdef MUZI_BASE_SUPERIO
+void MuziBaseBoard::setLedsEnabled(bool enabled) {
+  _leds_enabled = enabled;
+  writeStatusLed(_status_led_requested);
+  // Preserve the existing policy: the blue connection LED stays disabled.
+  digitalWrite(PIN_SUPERBASE_LED_BLUE, !LED_STATE_ON);
+}
+
+void MuziBaseBoard::writeStatusLed(bool on) {
+  _status_led_requested = on;
+  digitalWrite(LED_PIN, _leds_enabled && on ? LED_STATE_ON : !LED_STATE_ON);
+}
+#endif
 
 void MuziBaseBoard::shutdownPeripherals() {
   NRF52Board::shutdownPeripherals();

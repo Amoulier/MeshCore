@@ -94,6 +94,7 @@ class HomeScreen : public UIScreen {
     BLUETOOTH,
 #ifdef MUZI_BASE_SUPERIO
     SOUNDS,
+    LEDS,
 #endif
     ADVERT,
 #if ENV_INCLUDE_GPS == 1
@@ -406,6 +407,12 @@ public:
       display.drawTextCentered(display.width()/2, 24, "Buzzer");
       display.drawTextCentered(display.width()/2, 40, superbase::soundLabel(_node_prefs->superbase_buzzer_mode));
       display.drawTextCentered(display.width()/2, 58, "press: change mode");
+    } else if (_page == HomePage::LEDS) {
+      display.setColor(UIColor::primary_txt);
+      display.setTextSize(1);
+      display.drawTextCentered(display.width()/2, 24, "LEDs");
+      display.drawTextCentered(display.width()/2, 40, board.areLedsEnabled() ? "On" : "Off");
+      display.drawTextCentered(display.width()/2, 58, "press: toggle");
 #endif
     } else if (_page == HomePage::ADVERT) {
       display.setColor(UIColor::corp_blue);
@@ -616,6 +623,10 @@ public:
 #ifdef MUZI_BASE_SUPERIO
     if (c == KEY_ENTER && _page == HomePage::SOUNDS) {
       _task->toggleBuzzer();
+      return true;
+    }
+    if (c == KEY_ENTER && _page == HomePage::LEDS) {
+      _task->toggleLeds();
       return true;
     }
 #endif
@@ -948,7 +959,11 @@ void UITask::userLedHandler() {
       led_state = 0;
       next_led_change = cur_time + LED_CYCLE_MILLIS - last_led_increment;
     }
+#ifdef MUZI_BASE_SUPERIO
+    board.writeStatusLed(led_state != 0);
+#else
     digitalWrite(PIN_STATUS_LED, led_state == LED_STATE_ON);
+#endif
   }
 #endif
 }
@@ -1295,6 +1310,16 @@ void UITask::toggleBuzzer() {
 #endif
   #endif
 }
+
+#ifdef MUZI_BASE_SUPERIO
+void UITask::toggleLeds() {
+  _node_prefs->superbase_leds_enabled = !board.areLedsEnabled();
+  board.setLedsEnabled(_node_prefs->superbase_leds_enabled != 0);
+  the_mesh.savePrefs();
+  showAlert(_node_prefs->superbase_leds_enabled ? "LEDs: On" : "LEDs: Off", 800);
+  _next_refresh = 0;
+}
+#endif
 
 #ifdef MUZI_BASE_SUPERIO
 void UITask::enableBluetooth() {

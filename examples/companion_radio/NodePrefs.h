@@ -35,6 +35,7 @@ public:
 #ifdef MUZI_BASE_SUPERIO
   uint8_t superbase_buzzer_mode = 0;
   uint8_t superbase_ble_enabled = 1;
+  uint8_t superbase_leds_enabled = 1;
 #endif
   uint8_t  vibe_quiet = 0;
   uint8_t  gps_enabled = 0;      // GPS enabled flag (0=disabled, 1=enabled)
@@ -166,6 +167,7 @@ private:
 #ifdef MUZI_BASE_SUPERIO
       def("buzz_mode", _parent->superbase_buzzer_mode);
       def("ble_en", _parent->superbase_ble_enabled);
+      def("led_en", _parent->superbase_leds_enabled);
 #endif
       def("vibe_q", _parent->vibe_quiet);
       def("auto_add", _parent->autoadd_config);    // bitmask for auto-add contacts config

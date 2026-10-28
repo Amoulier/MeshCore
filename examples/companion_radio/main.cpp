@@ -285,6 +285,7 @@ void setup() {
   the_mesh.startInterface(interface_manager);
 #ifdef MUZI_BASE_SUPERIO
   board.prepareShutdown = []() { return the_mesh.prepareForShutdown(); };
+  board.setLedsEnabled(the_mesh.getNodePrefs()->superbase_leds_enabled != 0);
   if (!the_mesh.getNodePrefs()->superbase_ble_enabled) interface_manager.disableBluetooth();
 #endif
   sensors.begin();

@@ -118,6 +118,7 @@ public:
 #ifdef MUZI_BASE_SUPERIO
   void enableBluetooth();
   void disableBluetooth();
+  void toggleLeds();
 #endif
   bool getGPSState();
   void toggleGPS();

@@ -91,6 +91,10 @@ static const uint8_t AREF = (PIN_AREF); // not used
 #define LED_PIN                 LED_BUILTIN
 
 #define LED_STATE_ON            LOW
+#ifdef MUZI_BASE_SUPERIO
+// Physical blue LED remains independent of Bluefruit's disabled LED_BLUE alias.
+#define PIN_SUPERBASE_LED_BLUE   (36) // P1.04, active LOW.
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // Builtin buttons

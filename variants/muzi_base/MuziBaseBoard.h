@@ -21,6 +21,10 @@
 
 class MuziBaseBoard : public NRF52BoardDCDC {
   superbase::BQ25185Inputs _charger{PIN_CHARGER_FAULT, PIN_BATTERY_CHARGING};
+#ifdef MUZI_BASE_SUPERIO
+  bool _leds_enabled = true;
+  bool _status_led_requested = false;
+#endif
 protected:
 #ifdef NRF52_POWER_MANAGEMENT
   void initiateShutdown(uint8_t reason) override;
@@ -34,6 +38,11 @@ public:
   bool (*prepareShutdown)() = nullptr;
   MuziBaseBoard() : NRF52Board(MUZI_BASE_OTA_NAME) {}
   void begin();
+#ifdef MUZI_BASE_SUPERIO
+  bool areLedsEnabled() const { return _leds_enabled; }
+  void setLedsEnabled(bool enabled);
+  void writeStatusLed(bool on);
+#endif
   superbase::ChargeState getChargeState() {
     return _charger.read(isExternalPowered());
   }
