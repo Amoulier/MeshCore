@@ -166,6 +166,11 @@ void loop() {
 #endif
     if (reply[0]) {
       Serial.print("  -> "); Serial.println(reply);
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE && ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
+      // Prompt native USB to drain a partial final packet even when the host
+      // pauses before its next command. This does not enter MCU sleep.
+      if (HWCDC::isPlugged()) Serial.flush();
+#endif
     }
 
     command[0] = 0;  // reset command buffer
