@@ -3,6 +3,10 @@
 
 #include "MyMesh.h"
 
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE && ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
+  #include <hal/usb_serial_jtag_ll.h>
+#endif
+
 #ifdef DISPLAY_CLASS
   #include "UITask.h"
   static UITask ui_task(board, display);
@@ -166,12 +170,21 @@ void loop() {
 #endif
     if (reply[0]) {
       Serial.print("  -> "); Serial.println(reply);
-#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE && ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
-      // Prompt native USB to drain a partial final packet even when the host
-      // pauses before its next command. This does not enter MCU sleep.
-      if (HWCDC::isPlugged()) Serial.flush();
-#endif
     }
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE && ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
+    if (HWCDC::isPlugged()) {
+      Serial.flush();
+      // Arduino 2.0.x omits the terminating zero-length USB packet when its
+      // ring drains on a full 64-byte FIFO. Wait for room before that extra
+      // flush, otherwise the hardware ignores it and the host awaits more data.
+      const uint32_t until = millis() + 20;
+      while (HWCDC::isPlugged() && !usb_serial_jtag_ll_txfifo_writable() &&
+             static_cast<int32_t>(millis() - until) < 0) delay(1);
+      if (HWCDC::isPlugged() && usb_serial_jtag_ll_txfifo_writable()) {
+        usb_serial_jtag_ll_txfifo_flush();
+      }
+    }
+#endif
 
     command[0] = 0;  // reset command buffer
   }
