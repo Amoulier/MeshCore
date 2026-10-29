@@ -16,8 +16,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate shared host suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v6
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build-environment
+      - name: Run host tests
+        run: pio test -e native -e native_kiss_modem
+
   build:
     name: Package ${{ matrix.environment }}
+    needs: validate
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -87,7 +99,7 @@ jobs:
           test -s "${app_source}"
           test -s "${merged_source}"
 
-          python - "${app_source}" "${merged_source}" <<'PY'
+          python - "${app_source}" "${merged_source}" "${TARGET}" "${firmware_version}" <<'PY'
           from pathlib import Path
           import sys
 
@@ -96,6 +108,16 @@ jobs:
           assert app and app[0] == 0xE9, "OTA/application image lacks an ESP image header"
           assert merged and merged[0] == 0xE9, "merged image lacks the bootloader ESP image header"
           assert len(merged) > 0x10000 and merged[0x10000] == 0xE9, "merged image lacks the application header at 0x10000"
+          assert int.from_bytes(app[12:14], "little") == 9, "application is not ESP32-S3"
+          assert int.from_bytes(merged[12:14], "little") == 9, "bootloader is not ESP32-S3"
+          assert merged[0x10000:0x10000 + len(app)] == app, "merged application differs"
+          assert len(app) <= 0x640000, "application exceeds standard app partition"
+          if sys.argv[3] not in ("heltec_v4_terminal_chat", "heltec_v4_kiss_modem"):
+              assert sys.argv[4].encode() in app, "firmware version absent"
+          for hook in (b"MCRXTEST", b"get power.rxtest", b"set power.sleep rxtest",
+                       b"set power.sleep irqtest", b"set power.sleep buttontest",
+                       b"set power.sleep test", b"get power.irqtest"):
+              assert hook not in app, "test-only hook present"
           PY
 
           mkdir -p out
@@ -146,41 +168,13 @@ jobs:
           test "$(find out -maxdepth 1 -type f -name '*-ota.bin' | wc -l)" -eq "${expected}"
           test "$(find out -maxdepth 1 -type f -name '*-merged.bin' | wc -l)" -eq "${expected}"
 
-          cat > out/INSTALLATION.txt <<'EOF'
-          MeshCore Heltec V4 Energy Optimization firmware
-
-          Choose the file whose name begins with the required firmware role.
-
-          *-merged.bin
-            Complete ESP32-S3 image for a fresh installation or recovery.
-            Keep the exact -merged.bin suffix and flash it at address 0x0.
-
-          *-ota.bin
-            Application-only image for an already compatible MeshCore update
-            path. Never flash this file at address 0x0.
-
-          Companion BLE uses the six-digit PIN shown on the OLED unless a
-          permanent PIN has been configured. The OLED can be disabled locally
-          from the node and restored with the PRG button.
-
-          After five disconnected minutes, Companion BLE fully powers down the
-          ESP32-S3 Bluetooth stack and light-sleeps while the SX1262 remains in
-          continuous receive. Use the Bluetooth page and a long PRG press to
-          rebuild the encrypted GATT service and restore BLE without rebooting.
-          Computer USB, active BLE/Wi-Fi/GPS, OLED, buzzer or pending mesh work
-          inhibit MCU sleep. Test-only USB sleep overrides are not included.
-
-          High-power Companion BLE targets nominal 28 dBm using the detected
-          FEM table (21 dBm SX1262 input on KCT8103L). Other roles retain their
-          estimated 22 dBm ceiling: 11 dBm SX1262 input on GC1109 or 9 dBm on
-          KCT8103L. These are table estimates, not measured RF output.
-          EOF
+          cp .github/release/INSTALLATION.txt out/INSTALLATION.txt
 
           archive="MeshCore-Heltec-V4-all-variants-${RELEASE_TAG}.zip"
           (
             cd out
             zip -9 "${archive}" ./*-merged.bin ./*-ota.bin INSTALLATION.txt
-            sha256sum ./*-merged.bin ./*-ota.bin "${archive}" > SHA256SUMS.txt
+            sha256sum ./*-merged.bin ./*-ota.bin INSTALLATION.txt "${archive}" > SHA256SUMS.txt
           )
 
       - name: Publish stable release
@@ -193,71 +187,7 @@ jobs:
           draft: false
           make_latest: true
           fail_on_unmatched_files: true
-          body: |
-            Heltec WiFi LoRa 32 V4 OLED-only stable fork release.
-
-            Each role has two installable files:
-            - `*-merged.bin`: complete image for a fresh flash or recovery at `0x0`;
-            - `*-ota.bin`: application image for a compatible update path.
-
-            ## Battery-runtime hotfix
-
-            The BLE Companion no longer only stops advertisements when its
-            five-minute disconnected timer expires. It unregisters/frees GATT attributes and disables
-            Bluedroid and the ESP32-S3 Bluetooth controller, then enters explicit
-            light sleep whenever the mesh is idle. The SX1262 remains in
-            continuous receive and wakes the MCU through DIO1; PRG and a
-            bounded 20 ms maintenance timer are also wake sources. Restoring BLE
-            from the Bluetooth page rebuilds GATT without rebooting and preserves
-            node identity, contacts, channels, queued messages and saved settings.
-
-            ## Maximum transmit policy
-
-            High-power BLE targets nominal 28 dBm with 21 dBm SX1262 input.
-            Other Heltec V4 variants keep transmission at the maximum permitted by
-            the fork's existing FEM-aware estimated 22 dBm antenna-path ceiling.
-            GC1109 hardware applies 11 dBm to the SX1262 and KCT8103L hardware
-            applies 9 dBm. Lower saved values or client commands cannot reduce
-            physical TX power. RX profiles still affect reception only.
-
-            ## Firmware variants
-
-            ### Companion
-            - `heltec_v4_companion_radio_ble` - Phone Companion over BLE; after five disconnected minutes it fully powers Bluetooth down and light-sleeps while preserving LoRa RX. PRG restores BLE without rebooting; high-power BLE targets nominal 28 dBm.
-            - `heltec_v4_companion_radio_usb` - Companion for a computer or host connected through USB serial.
-            - `heltec_v4_companion_radio_wifi` - Companion over Wi-Fi/TCP with modem power saving and reconnect backoff.
-
-            ### Repeaters and infrastructure
-            - `heltec_v4_solar_repeater` - Solar LoRa repeater with critical-battery recovery, default power saving and OLED off at startup.
-            - `heltec_v4_expansionkit_repeater` - Repeater with Heltec expansion-kit sensor and accessory-bus support.
-            - `heltec_v4_repeater_bridge_espnow` - Continuously available bridge between MeshCore LoRa and ESP-NOW.
-
-            ### Services and endpoints
-            - `heltec_v4_room_server` - Shared room/BBS service that stores and distributes posts to mesh clients.
-            - `heltec_v4_terminal_chat` - Interactive MeshCore chat client operated from a USB serial terminal.
-            - `heltec_v4_sensor` - Always-on telemetry and alert node with continuous LoRa availability.
-            - `heltec_v4_kiss_modem` - USB KISS modem for external host software and custom radio integrations.
-
-            The single ZIP contains all 20 firmware images. Installation guidance
-            and all integrity hashes are centralized in `INSTALLATION.txt` and
-            `SHA256SUMS.txt`.
-
-            The release build verifies the BLE-off implementation, PRG/DIO1/timer
-            wake paths, maximum-TX flags, all ten firmware targets, both binary
-            image formats and ESP image headers.
-
-            Physical V4.3/KCT8103L validation received all 168 numbered over-air
-            test packets: 96 with MCU sleep enabled, 48 in awake baselines and
-            24 from the Heltec to an official-firmware XIAO. The two sleep windows
-            accumulated 226.928 seconds asleep with zero sleep/RX/core errors.
-            No TX reduction was made. Five BLE suspend/resume cycles and PRG
-            display restoration also passed. This close-range sample does not
-            establish range or guaranteed absence of loss in other conditions.
-
-            Physical qualification remains incomplete: current draw, conducted RF
-            power, sensitivity, authenticated messaging, Wi-Fi/ESP-NOW operation,
-            solar battery recovery and full battery runtime still require measurement
-            on final V4.2/GC1109 and V4.3/KCT8103L hardware.
+          body_path: .github/release/heltec-v4-energy-notes.md
           files: |
             out/*-merged.bin
             out/*-ota.bin
