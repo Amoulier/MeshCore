@@ -12,6 +12,9 @@ class UITask {
   char _version_info[32];
   unsigned long _powering_off_at = 0;
   unsigned long _started_at = 0;
+#if defined(HELTEC_V4_PERSISTENT_DISPLAY) && HELTEC_V4_PERSISTENT_DISPLAY
+  bool _last_display_on = false;
+#endif
 
   void renderCurrScreen();
 public:
@@ -19,4 +22,5 @@ public:
   void begin(NodePrefs* node_prefs, const char* build_date, const char* firmware_version);
 
   void loop();
+  bool isDisplayOn() const { return _display->isOn(); }
 };

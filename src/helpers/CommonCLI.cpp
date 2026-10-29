@@ -10,6 +10,20 @@
 #define BRIDGE_MAX_BAUD 115200
 #endif
 
+namespace {
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+// Keep the Companion profile in place when changing this board's role. The
+// two serializers share radio fields but do not preserve each other's keys.
+constexpr const char* kPrefsPath = "/repeater_prefs.json";
+constexpr const char* kPrefsTemporaryPath = "/repeater_prefs.json.tmp";
+constexpr const char* kPrefsBackupPath = "/repeater_prefs.json.bak";
+#else
+constexpr const char* kPrefsPath = "/prefs.json";
+constexpr const char* kPrefsTemporaryPath = "/prefs.json.tmp";
+constexpr const char* kPrefsBackupPath = "/prefs.json.bak";
+#endif
+}
+
 // Believe it or not, this std C function is busted on some platforms!
 static uint32_t _atoi(const char* sp) {
   uint32_t n = 0;
@@ -29,9 +43,18 @@ static bool isValidName(const char *n) {
 }
 
 void CommonCLI::loadPrefs(FILESYSTEM* fs) {
-  const char* prefs_path = fs->exists("/prefs.json")
-      ? "/prefs.json"
-      : (fs->exists("/prefs.json.bak") ? "/prefs.json.bak" : NULL);
+  const char* prefs_path = fs->exists(kPrefsPath)
+      ? kPrefsPath
+      : (fs->exists(kPrefsBackupPath) ? kPrefsBackupPath : NULL);
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+  // First use inherits compatible fields from the existing profile. Saving
+  // below always writes the active Repeater file and leaves this source alone.
+  if (prefs_path == NULL) {
+    prefs_path = fs->exists("/prefs.json")
+        ? "/prefs.json"
+        : (fs->exists("/prefs.json.bak") ? "/prefs.json.bak" : NULL);
+  }
+#endif
   if (prefs_path) {
 #if defined(RP2040_PLATFORM)
     File file = fs->open(prefs_path, "r");
@@ -147,8 +170,8 @@ bool CommonCLI::savePrefs(FILESYSTEM* fs) {
     return false;
   }
 
-  const char* temporary_path = "/prefs.json.tmp";
-  const char* backup_path = "/prefs.json.bak";
+  const char* temporary_path = kPrefsTemporaryPath;
+  const char* backup_path = kPrefsBackupPath;
   fs->remove(temporary_path);
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   File file = fs->open(temporary_path, FILE_O_WRITE);
@@ -170,14 +193,14 @@ bool CommonCLI::savePrefs(FILESYSTEM* fs) {
   }
 
   fs->remove(backup_path);
-  const bool had_primary = fs->exists("/prefs.json");
-  if (had_primary && !fs->rename("/prefs.json", backup_path)) {
+  const bool had_primary = fs->exists(kPrefsPath);
+  if (had_primary && !fs->rename(kPrefsPath, backup_path)) {
     fs->remove(temporary_path);
     return false;
   }
-  if (!fs->rename(temporary_path, "/prefs.json")) {
+  if (!fs->rename(temporary_path, kPrefsPath)) {
     if (had_primary) {
-      fs->rename(backup_path, "/prefs.json");
+      fs->rename(backup_path, kPrefsPath);
     }
     fs->remove(temporary_path);
     return false;

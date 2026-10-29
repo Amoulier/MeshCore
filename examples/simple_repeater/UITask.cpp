@@ -35,6 +35,9 @@ void UITask::begin(NodePrefs* node_prefs, const char* build_date, const char* fi
   _started_at = millis();
   _node_prefs = node_prefs;
   _display->turnOn();
+#if defined(HELTEC_V4_PERSISTENT_DISPLAY) && HELTEC_V4_PERSISTENT_DISPLAY
+  _last_display_on = _display->isOn();
+#endif
 
 #if defined(PIN_USER_BTN) && defined(DISPLAY_CLASS)
   user_btn.begin();
@@ -112,6 +115,13 @@ void UITask::renderCurrScreen() {
 void UITask::loop() {
 #if defined(PIN_USER_BTN) && defined(DISPLAY_CLASS)
   int ev = user_btn.check();
+#if defined(HELTEC_V4_PERSISTENT_DISPLAY) && HELTEC_V4_PERSISTENT_DISPLAY
+  // The board's long-press hook can restore the display while consuming the
+  // button event. Give that external restoration a fresh visibility window.
+  if (_display->isOn() && !_last_display_on) {
+    _auto_off = millis() + AUTO_OFF_MILLIS;
+  }
+#endif
   if (ev == BUTTON_EVENT_CLICK) {
     if (_display->isOn()) {
       // TODO: any action ?
@@ -147,4 +157,7 @@ void UITask::loop() {
       _board->powerOff();  // should not return
     }
   }
+#if defined(HELTEC_V4_PERSISTENT_DISPLAY) && HELTEC_V4_PERSISTENT_DISPLAY
+  _last_display_on = _display->isOn();
+#endif
 }

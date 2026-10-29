@@ -3,6 +3,10 @@
 
 #include "MyMesh.h"
 
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE && ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
+  #include <hal/usb_serial_jtag_ll.h>
+#endif
+
 #ifdef DISPLAY_CLASS
   #include "UITask.h"
   static UITask ui_task(board, display);
@@ -32,6 +36,10 @@ static char ethernet_command[160];
 #define POWERSAVING_FIRSTSLEEP_SECS 120
 #endif
 static constexpr unsigned long kPowerSavingFirstSleepSecs = POWERSAVING_FIRSTSLEEP_SECS;
+
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+static uint32_t last_usb_host_seen = 0;
+#endif
 
 #if defined(PIN_USER_BTN) && defined(_SEEED_SENSECAP_SOLAR_H_)
 static unsigned long userBtnDownAt = 0;
@@ -163,6 +171,20 @@ void loop() {
     if (reply[0]) {
       Serial.print("  -> "); Serial.println(reply);
     }
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE && ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
+    if (HWCDC::isPlugged()) {
+      Serial.flush();
+      // Arduino 2.0.x omits the terminating zero-length USB packet when its
+      // ring drains on a full 64-byte FIFO. Wait for room before that extra
+      // flush, otherwise the hardware ignores it and the host awaits more data.
+      const uint32_t until = millis() + 20;
+      while (HWCDC::isPlugged() && !usb_serial_jtag_ll_txfifo_writable() &&
+             static_cast<int32_t>(millis() - until) < 0) delay(1);
+      if (HWCDC::isPlugged() && usb_serial_jtag_ll_txfifo_writable()) {
+        usb_serial_jtag_ll_txfifo_flush();
+      }
+    }
+#endif
 
     command[0] = 0;  // reset command buffer
   }
@@ -205,8 +227,30 @@ void loop() {
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.loop();
 #endif
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+  bool usb_host_active = false;
+#if ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
+  if (HWCDC::isPlugged()) last_usb_host_seen = millis();
+  // Light sleep stops the integrated USB peripheral. Preserve an attached
+  // computer and allow a brief grace period during enumeration changes.
+  usb_host_active = HWCDC::isPlugged() ||
+      static_cast<uint32_t>(millis() - last_usb_host_seen) < 2000;
+#endif
+#endif
   if (the_mesh.getNodePrefs()->powersaving_enabled && !the_mesh.hasPendingWork()) {
-#if defined(NRF52_PLATFORM)
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+    if (!usb_host_active && radio_driver.isInRecvMode() &&
+        !the_mesh.getNodePrefs()->gps_enabled &&
+#ifdef DISPLAY_CLASS
+        !ui_task.isDisplayOn() &&
+#endif
+        the_mesh.millisHasNowPassed(kPowerSavingFirstSleepSecs * 1000)) {
+      // Short windows keep CLI, scheduled work and PRG responsive. RX stays
+      // powered, and a latched DIO1 is polled after restoring its normal ISR.
+      board.sleepWhileReceiving(20);
+      radio_driver.pollLatchedReceiveIRQ();
+    }
+#elif defined(NRF52_PLATFORM)
     board.sleep(0); // nrf ignores seconds param, sleeps whenever possible
 #else
     if (the_mesh.millisHasNowPassed(kPowerSavingFirstSleepSecs * 1000)) { // To check if it is time to sleep

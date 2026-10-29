@@ -1,0 +1,132 @@
+# MeshCore Heltec V4 — stable v1.1.2
+
+Guide date: 29 October 2026.
+
+These images target the Heltec WiFi LoRa 32 V4 OLED family. Select the role
+that matches the node's intended use. TFT and R8 targets are not included.
+
+## Choose a firmware role
+
+| Filename prefix | Role |
+| --- | --- |
+| `heltec_v4_solar_repeater` | LoRa repeater with the Solar power profile, receive-preserving MCU sleep and estimated 28 dBm TX policy. |
+| `heltec_v4_expansionkit_repeater` | Repeater with expansion-kit sensors and accessory-bus support. |
+| `heltec_v4_repeater_bridge_espnow` | Bridge between MeshCore LoRa and ESP-NOW. |
+| `heltec_v4_room_server` | Shared room/BBS service. |
+| `heltec_v4_terminal_chat` | Chat client operated from a serial terminal. |
+| `heltec_v4_companion_radio_usb` | Companion protocol over USB serial. |
+| `heltec_v4_companion_radio_ble` | Phone Companion over Bluetooth, including power saving and the estimated 28 dBm TX policy. |
+| `heltec_v4_companion_radio_wifi` | Companion over Wi-Fi/TCP. |
+| `heltec_v4_sensor` | Telemetry and alert endpoint. |
+| `heltec_v4_kiss_modem` | USB KISS modem for external host software. |
+
+The retained repeater is **Solar Repeater**. The BLE power-saving behavior
+is part of **Companion BLE**; there is no separate low-power BLE image.
+
+## Select the correct image and address
+
+Verify the selected file against the release's `SHA256SUMS.txt` before use.
+Keep the exact `-ota.bin` or `-merged.bin` suffix.
+
+| Image | Use | Serial flash address |
+| --- | --- | --- |
+| `*-ota.bin` | Application-only update on an already compatible ESP32-S3/16 MB MeshCore layout. | `0x10000` for the release's standard `app0` installation. |
+| `*-merged.bin` | Fresh installation or recovery, including bootloader, partition table and application. | `0x0` |
+
+Never write an application-only `-ota.bin` at `0x0`, or a merged image at
+`0x10000`. A compatible OTA/web updater manages its own destination; do not
+enter a raw serial offset into an updater that does not ask for one. Before
+a direct serial application update, verify the installed partition layout
+and active application slot. A device using another layout or active OTA
+slot needs its appropriate update/recovery procedure.
+
+An application-only write to the correct compatible partition leaves the
+filesystem and NVS outside that application partition. Do not select an
+erase-all option as part of a routine update. A merged image is a recovery
+installation and does not guarantee retention of existing data, especially
+when changing layouts. Erasing the device is a separate deliberate operation,
+not an implicit installation step.
+
+After boot, verify the expected role/version, node identity and radio settings.
+Nodes that communicate together need matching frequency, bandwidth, spreading
+factor and coding rate. Keep the antenna connected during transmissions.
+
+## Companion BLE
+
+Pair using the six-digit PIN shown on the OLED unless an owner-configured
+permanent PIN is in use. When the screen was persistently disabled, hold
+PRG for approximately two seconds to restore it.
+
+After five minutes without a connected BLE peer, Bluetooth fully shuts
+down. LoRa reception remains available, and the MCU can sleep while idle.
+To restore Bluetooth, select the Bluetooth page with PRG and use a long
+press to enable it. The GATT service is rebuilt without rebooting; its UART
+handles remain stable across these shutdown/resume cycles.
+
+An active computer USB host, BLE/Wi-Fi connection, GPS, visible display,
+buzzer or pending mesh work can prevent MCU sleep. The computer's presence
+does not turn the BLE image into the USB Companion protocol: choose the USB
+role for that interface. Diagnostic USB/synthetic wake test commands are not
+part of these release images.
+
+## Solar Repeater
+
+Solar Repeater uses the local serial CLI at 115200 baud and MeshCore's LoRa
+administrator interface. It does not provide the phone-facing BLE Companion
+service. To administer it over LoRa, use another Companion node and the
+Repeater's owner-managed administrator credentials.
+
+New profiles can use a stock administrative password until the owner changes
+it. Set a unique owner password locally before leaving the Repeater in
+service. The serial command is `password <your-new-password>`; its reply
+echoes the value, so keep the terminal output private. Existing owner
+credentials are not included in this release or its public artifacts.
+
+When switching from Companion to Solar, the shared identity and compatible
+radio fields can be retained. Solar saves its active settings in
+`/repeater_prefs.json`, with role-specific transactional temporary/recovery
+files. On first use it can read the earlier shared profile; saving Solar
+settings leaves that original Companion profile in place. This does not
+convert every Companion-only option into a Repeater option.
+
+A Companion profile normally has forwarding disabled. Check `get repeat`
+after changing roles and use `set repeat on` if needed. Also verify `get radio`,
+`get radio.power`, `get radio.rxprofile` and `powersaving`. If radio parameters
+need changing, `set radio <frequency>,<bandwidth>,<SF>,<CR>` saves them and
+requires a reboot to apply. Verify the settings again after reboot rather
+than relying only on the immediate setter response.
+
+For a configured periodic local-advert schedule, the CLI accepts a minimum
+of 60 minutes; `set advert.interval 60` selects that interval. A value of
+zero disables local periodic adverts. An inherited interval below the CLI's
+minimum can be normalized to disabled when settings are saved, so check
+`get advert.interval` explicitly. Flood-advert timing is a separate setting.
+
+Power saving should be enabled for battery operation (`powersaving on`).
+After the startup delay, the Solar path uses bounded 20 ms MCU sleep windows
+while the LoRa receiver remains on. It sleeps only with RX armed, no pending
+mesh work, GPS off, the display blank and no active computer USB host.
+USB connection keeps the MCU available for diagnostics. PRG can restore a
+persistently disabled display with a fresh approximately 20-second visibility
+interval; ordinary inactivity blanking can be woken with a short PRG click.
+
+Changing the firmware role retains a shared node identity when the existing
+filesystem is retained. Recheck the advertised role and configuration on
+your other nodes after the change.
+
+## Transmit-power policy and validation limits
+
+Companion BLE and Solar Repeater select the nominal 28 dBm FEM policy on
+the tested high-power V4.3/KCT8103L board, with 21 dBm SX1262 input. Other
+roles retain their existing estimated 22 dBm ceiling. These are FEM mapping
+estimates; the release does not include a conducted RF power measurement.
+RX profiles change receive gain independently of this TX policy.
+
+The functional audit and its retained first 9/10 battery observation are
+documented in the release notes. Later 32/32 USB and battery samples passed;
+they do not establish a cause for that earlier miss or guarantee loss-free
+operation. Physical bench results belong to the documented validation builds;
+the newly compiled stable release images have not themselves been flashed
+and physically tested. Current draw, full battery autonomy, sensitivity/range,
+three-node field routing, a real solar charging cycle, physical low-battery recovery
+and a 48–72-hour stability run were not qualified by those bench tests.

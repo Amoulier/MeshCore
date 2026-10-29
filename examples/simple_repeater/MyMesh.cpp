@@ -1,5 +1,6 @@
 #include "MyMesh.h"
 #include <algorithm>
+#include <helpers/RepeaterAnonRequest.h>
 
 /* ------------------------------ Config -------------------------------- */
 
@@ -58,10 +59,6 @@
 #define REQ_TYPE_GET_OWNER_INFO     0x07     // FIRMWARE_VER_LEVEL >= 2
 
 #define RESP_SERVER_LOGIN_OK        0 // response to ANON_REQ
-
-#define ANON_REQ_TYPE_REGIONS      0x01
-#define ANON_REQ_TYPE_OWNER        0x02
-#define ANON_REQ_TYPE_BASIC        0x03   // just remote clock
 
 #define CLI_REPLY_DELAY_MILLIS      600
 
@@ -579,6 +576,9 @@ void MyMesh::onAnonDataRecv(mesh::Packet *packet, const uint8_t *secret, const m
                             uint8_t *data, size_t len) {
   if (packet->getPayloadType() == PAYLOAD_TYPE_ANON_REQ) { // received an initial request by a possible admin
                                                            // client (unknown at this stage)
+    // Reject truncated reply paths before handlers copy their declared bytes.
+    if (!mesh::isCompleteRepeaterAnonRequest(data, len, packet->isRouteDirect())) return;
+
     uint32_t timestamp;
     memcpy(&timestamp, data, 4);
 
@@ -588,11 +588,11 @@ void MyMesh::onAnonDataRecv(mesh::Packet *packet, const uint8_t *secret, const m
     reply_path_len = 0xFF;
     if (data[4] == 0 || data[4] >= ' ') {   // is password, ie. a login request
       reply_len = handleLoginReq(sender, secret, timestamp, &data[4], packet->isRouteFlood());
-    } else if (data[4] == ANON_REQ_TYPE_REGIONS && packet->isRouteDirect()) {
+    } else if (data[4] == mesh::REPEATER_ANON_REQ_REGIONS && packet->isRouteDirect()) {
       reply_len = handleAnonRegionsReq(sender, timestamp, &data[5]);
-    } else if (data[4] == ANON_REQ_TYPE_OWNER && packet->isRouteDirect()) {
+    } else if (data[4] == mesh::REPEATER_ANON_REQ_OWNER && packet->isRouteDirect()) {
       reply_len = handleAnonOwnerReq(sender, timestamp, &data[5]);
-    } else if (data[4] == ANON_REQ_TYPE_BASIC && packet->isRouteDirect()) {
+    } else if (data[4] == mesh::REPEATER_ANON_REQ_BASIC && packet->isRouteDirect()) {
       reply_len = handleAnonClockReq(sender, timestamp, &data[5]);
     } else {
       reply_len = 0;  // unknown/invalid request type
