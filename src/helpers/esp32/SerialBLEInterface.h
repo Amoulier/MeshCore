@@ -14,6 +14,10 @@ class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLE
   BLECharacteristic *pTxCharacteristic;
   BLECharacteristic *pRxCharacteristic = nullptr;
   BLE2902 *pNotifyDescriptor = nullptr;
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  struct BLECharacteristicPair;
+  BLECharacteristicPair *pCharacteristicPair = nullptr;
+#endif
   char saved_device_name[48] = {};
   static SerialBLEInterface* power_instance;
   volatile bool app_registered = false, service_deleted = false;
