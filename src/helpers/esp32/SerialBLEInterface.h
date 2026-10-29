@@ -100,6 +100,9 @@ public:
 
   void begin(const char *prefix, char *name, uint32_t pin_code);
 
+  // Disabled interfaces are no longer polled for input. Keep servicing power
+  // policy so an asynchronous peer disconnect can finish controller shutdown.
+  void loop() override { updatePowerPolicy(); }
   void enable() override;
   void disable() override;
   bool isEnabled() const override { return _isEnabled; }
