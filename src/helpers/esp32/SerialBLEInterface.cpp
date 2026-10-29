@@ -18,6 +18,21 @@
 #define BLE_SLOW_ADV_MIN 3200
 #define BLE_SLOW_ADV_MAX 4800
 
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+// Arduino BLE creates attributes by iterating a map keyed by characteristic
+// pointer. Separate heap allocations can reverse that order after a rebuild,
+// swapping RX/TX handles underneath bonded clients. Members of one allocation
+// keep TX before RX regardless of heap reuse, so the attribute order is stable.
+struct SerialBLEInterface::BLECharacteristicPair {
+  BLECharacteristic tx;
+  BLECharacteristic rx;
+
+  BLECharacteristicPair()
+    : tx(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY),
+      rx(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE) {}
+};
+#endif
+
 SerialBLEInterface* SerialBLEInterface::power_instance = nullptr;
 
 void SerialBLEInterface::powerGattsEvent(esp_gatts_cb_event_t event, esp_gatt_if_t, esp_ble_gatts_cb_param_t* param) {
@@ -62,15 +77,25 @@ void SerialBLEInterface::createService()
 {
   pService = pServer->createService(SERVICE_UUID);
 
+#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+  pCharacteristicPair = new BLECharacteristicPair();
+  pTxCharacteristic = &pCharacteristicPair->tx;
+  pRxCharacteristic = &pCharacteristicPair->rx;
+  pService->addCharacteristic(pTxCharacteristic);
+  pService->addCharacteristic(pRxCharacteristic);
+#else
   pTxCharacteristic = pService->createCharacteristic(
       CHARACTERISTIC_UUID_TX,
       BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+#endif
   pTxCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM);
   pNotifyDescriptor = new BLE2902();
   pTxCharacteristic->addDescriptor(pNotifyDescriptor);
 
+#if !defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) || !HELTEC_V4_COMPANION_LIGHT_SLEEP
   pRxCharacteristic =
       pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
+#endif
   pRxCharacteristic->setAccessPermissions(ESP_GATT_PERM_WRITE_ENC_MITM);
   pRxCharacteristic->setCallbacks(this);
 
@@ -312,8 +337,9 @@ void SerialBLEInterface::suspendController()
     while (!service_deleted && static_cast<int32_t>(millis() - deadline) < 0) delay(1);
     if (!service_deleted) { power_error = ESP_ERR_TIMEOUT; return; }
     delete pNotifyDescriptor;
-    delete pRxCharacteristic;
-    delete pTxCharacteristic;
+    // RX/TX are members of the pair, not individually allocated objects.
+    delete pCharacteristicPair;
+    pCharacteristicPair = nullptr;
     delete pService;
     pNotifyDescriptor = nullptr;
     pRxCharacteristic = pTxCharacteristic = nullptr;
