@@ -33,6 +33,10 @@ static char ethernet_command[160];
 #endif
 static constexpr unsigned long kPowerSavingFirstSleepSecs = POWERSAVING_FIRSTSLEEP_SECS;
 
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+static uint32_t last_usb_host_seen = 0;
+#endif
+
 #if defined(PIN_USER_BTN) && defined(_SEEED_SENSECAP_SOLAR_H_)
 static unsigned long userBtnDownAt = 0;
 #define USER_BTN_HOLD_OFF_MILLIS 1500
@@ -205,8 +209,30 @@ void loop() {
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.loop();
 #endif
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+  bool usb_host_active = false;
+#if ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
+  if (HWCDC::isPlugged()) last_usb_host_seen = millis();
+  // Light sleep stops the integrated USB peripheral. Preserve an attached
+  // computer and allow a brief grace period during enumeration changes.
+  usb_host_active = HWCDC::isPlugged() ||
+      static_cast<uint32_t>(millis() - last_usb_host_seen) < 2000;
+#endif
+#endif
   if (the_mesh.getNodePrefs()->powersaving_enabled && !the_mesh.hasPendingWork()) {
-#if defined(NRF52_PLATFORM)
+#if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
+    if (!usb_host_active && radio_driver.isInRecvMode() &&
+        !the_mesh.getNodePrefs()->gps_enabled &&
+#ifdef DISPLAY_CLASS
+        !ui_task.isDisplayOn() &&
+#endif
+        the_mesh.millisHasNowPassed(kPowerSavingFirstSleepSecs * 1000)) {
+      // Short windows keep CLI, scheduled work and PRG responsive. RX stays
+      // powered, and a latched DIO1 is polled after restoring its normal ISR.
+      board.sleepWhileReceiving(20);
+      radio_driver.pollLatchedReceiveIRQ();
+    }
+#elif defined(NRF52_PLATFORM)
     board.sleep(0); // nrf ignores seconds param, sleeps whenever possible
 #else
     if (the_mesh.millisHasNowPassed(kPowerSavingFirstSleepSecs * 1000)) { // To check if it is time to sleep

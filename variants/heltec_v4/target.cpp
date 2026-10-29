@@ -98,7 +98,7 @@ bool radio_init()
 #endif
   if (initialized) {
     // Preserve MeshCore's existing SX1262-input setting. The board applies a
-    // FEM-aware ceiling so estimated antenna output stays within 22 dBm.
+    // FEM-aware ceiling selected by this firmware profile.
     radio_driver.setTxPower(LORA_TX_POWER);
   }
   return initialized;

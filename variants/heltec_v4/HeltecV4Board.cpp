@@ -508,7 +508,8 @@ void HeltecV4Board::idle(uint32_t delay_millis)
 
 bool HeltecV4Board::sleepWhileReceiving(uint32_t duration_millis)
 {
-#if defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP
+#if (defined(HELTEC_V4_COMPANION_LIGHT_SLEEP) && HELTEC_V4_COMPANION_LIGHT_SLEEP) || \
+    (defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE)
   // The application checks pending work and RX mode. Check asynchronous sources
   // again here: a packet or PRG press may have arrived since that check.
   const gpio_num_t irq = static_cast<gpio_num_t>(P_LORA_DIO_1);
