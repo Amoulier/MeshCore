@@ -1,4 +1,5 @@
 #include "Mesh.h"
+#include <helpers/PeerPathPayload.h>
 //#include <Arduino.h>
 
 namespace mesh {
@@ -158,23 +159,19 @@ DispatcherAction Mesh::onRecvPacket(Packet* pkt) {
             int len = Utils::MACThenDecrypt(secret, data, macAndData, pkt->payload_len - i);
             if (len > 0) {  // success!
               if (pkt->getPayloadType() == PAYLOAD_TYPE_PATH) {
-                int k = 0;
-                uint8_t path_len = data[k++];
-                if (!Packet::isValidPathLen(path_len)) {
-                  MESH_DEBUG_PRINTLN("%s PAYLOAD_TYPE_PATH, bad path_len: %u", getLogDateTime(), (uint32_t)path_len);
-                  break;   // reject bad encoding
+                DecodedPeerPathPayload decoded;
+                if (!decodePeerPathPayload(data, static_cast<size_t>(len), decoded)) {
+                  MESH_DEBUG_PRINTLN("%s PAYLOAD_TYPE_PATH, invalid or truncated plaintext", getLogDateTime());
+                  break;
                 }
-                uint8_t hash_size = (path_len >> 6) + 1;
-                uint8_t hash_count = path_len & 63;
-                uint8_t* path = &data[k]; k += hash_size*hash_count;
-                uint8_t extra_type = data[k++] & 0x0F;   // upper 4 bits reserved for future use
-                uint8_t* extra = &data[k];
-                uint8_t extra_len = len - k;   // remainder of packet (may be padded with zeroes!)
-                if (onPeerPathRecv(pkt, j, secret, path, path_len, extra_type, extra, extra_len)) {
+                uint8_t* path = &data[1];
+                uint8_t* extra = &data[2 + decoded.path_bytes];
+                if (onPeerPathRecv(pkt, j, secret, path, decoded.encoded_path_len,
+                                   decoded.extra_type, extra, decoded.extra_len)) {
                   if (pkt->isRouteFlood()) {
                     // send a reciprocal return path to sender, but send DIRECTLY!
                     mesh::Packet* rpath = createPathReturn(&src_hash, secret, pkt->path, pkt->path_len, 0, NULL, 0);
-                    if (rpath) sendDirect(rpath, path, path_len, 500);
+                    if (rpath) sendDirect(rpath, path, decoded.encoded_path_len, 500);
                   }
                 }
               } else {
