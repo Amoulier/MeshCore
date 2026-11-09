@@ -109,6 +109,18 @@ void UITask::renderCurrScreen() {
     _display->setCursor(0, 30);
     sprintf(tmp, "BW: %03.2f CR: %d", _node_prefs->bw, _node_prefs->cr);
     _display->print(tmp);
+
+    // Use the board's normal cached ADC reading; never force a fresh sample.
+    const uint16_t battery_mv = _board->getBattMilliVolts();
+    const unsigned battery_centivolts = (static_cast<unsigned>(battery_mv) + 5U) / 10U;
+    _display->setCursor(0, 40);
+    snprintf(tmp, sizeof(tmp), "BAT: %u.%02uV", battery_centivolts / 100U,
+             battery_centivolts % 100U);
+    _display->print(tmp);
+
+    _display->setCursor(0, 50);
+    snprintf(tmp, sizeof(tmp), "PowerSaving: %s", _node_prefs->powersaving_enabled ? "ON" : "off");
+    _display->print(tmp);
   }
 }
 

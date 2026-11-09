@@ -2,6 +2,7 @@
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
 #include "target.h"
+#include <esp_timer.h>
 #include <time.h>
 #ifdef ENABLE_WIFI_INTERFACE
   #include <WiFi.h>
@@ -294,17 +295,22 @@ public:
     }
 
     if (_page == HomePage::FIRST) {
+#if defined(HELTEC_LORA_V4_OLED) && !defined(UI_SHOW_CLOCK)
+      const bool compact_home = display.width() == 128 && display.height() == 64;
+#else
+      const bool compact_home = false;
+#endif
       display.setColor(UIColor::primary_txt);
       #ifdef ENABLE_WIFI_INTERFACE
       // smaller unread message ui for wifi variants
       display.setTextSize(1);
       sprintf(tmp, "Unread Msg: %d", _task->getMsgCount());
-      display.drawTextCentered(display.width() / 2, 22, tmp);
+      display.drawTextCentered(display.width() / 2, compact_home ? 20 : 22, tmp);
       #else
       // larger unread message ui for non wifi variants
       display.setTextSize(2);
       sprintf(tmp, "MSG: %d", _task->getMsgCount());
-      display.drawTextCentered(display.width() / 2, 22, tmp);
+      display.drawTextCentered(display.width() / 2, compact_home ? 20 : 22, tmp);
       #endif
       #ifdef UI_SHOW_CLOCK
       display.setTextSize(3);
@@ -321,7 +327,7 @@ public:
         IPAddress ip = WiFi.localIP();
         snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
         display.setTextSize(1);
-        display.drawTextCentered(display.width() / 2, 32, tmp);
+        display.drawTextCentered(display.width() / 2, compact_home ? 29 : 32, tmp);
       #endif
       if (_task->hasConnection()) {
         display.setColor(UIColor::warning_txt);
@@ -339,8 +345,28 @@ public:
         display.drawTextCentered(display.width() / 2, 110, tmp);
         #else
         display.setTextSize(2);
-        display.drawTextCentered(display.width() / 2, 43, tmp);
+        display.drawTextCentered(display.width() / 2, compact_home ? 38 : 43, tmp);
         #endif
+      }
+
+      if (compact_home) {
+        // Read the ESP32's 64-bit boot timer directly, even after the OLED has
+        // been off through a millis() rollover. Rendering never accumulates time.
+        const uint64_t uptime_secs = static_cast<uint64_t>(esp_timer_get_time()) / 1000000ULL;
+        const unsigned long days = uptime_secs / 86400ULL;
+        const unsigned long hours = (uptime_secs / 3600ULL) % 24ULL;
+        const unsigned long minutes = (uptime_secs / 60ULL) % 60ULL;
+        if (days > 0) {
+          snprintf(tmp, sizeof(tmp), "Up %lud %02luh %02lum", days, hours, minutes);
+        } else if (hours > 0) {
+          snprintf(tmp, sizeof(tmp), "Up %luh %02lum", hours, minutes);
+        } else {
+          snprintf(tmp, sizeof(tmp), "Up %lum %02lus", minutes,
+                   static_cast<unsigned long>(uptime_secs % 60ULL));
+        }
+        display.setTextSize(1);
+        display.setColor(UIColor::secondary_txt);
+        display.drawTextCentered(display.width() / 2, 56, tmp);
       }
     } else if (_page == HomePage::RECENT) {
       the_mesh.getRecentlyHeard(recent, UI_RECENT_LIST_SIZE);

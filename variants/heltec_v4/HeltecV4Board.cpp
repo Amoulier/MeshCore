@@ -635,6 +635,56 @@ void HeltecV4Board::attachDynamicPrefs(KeyValueStore *prefs)
 
 bool HeltecV4Board::handleCommand(const char *command, uint32_t sender_timestamp, char *reply)
 {
+  if (strcmp(command, "get power.reset") == 0) {
+    const uint32_t reason = getResetReason();
+    snprintf(reply, 160, "> reset:%lu,reason:%s", static_cast<unsigned long>(reason),
+             getResetReasonString(reason));
+    return true;
+  }
+
+  if (strcmp(command, "get sensor.pins") == 0) {
+#if defined(PIN_BOARD_SDA) && defined(PIN_BOARD_SCL)
+    const int i2c_sda = PIN_BOARD_SDA;
+    const int i2c_scl = PIN_BOARD_SCL;
+#else
+    const int i2c_sda = SDA;
+    const int i2c_scl = SCL;
+#endif
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+    const int env_sda = ENV_PIN_SDA;
+    const int env_scl = ENV_PIN_SCL;
+#else
+    const int env_sda = -1;
+    const int env_scl = -1;
+#endif
+#ifdef PIN_GPS_RX
+    const int gps_rx = PIN_GPS_RX;
+#else
+    const int gps_rx = -1;
+#endif
+#ifdef PIN_GPS_TX
+    const int gps_tx = PIN_GPS_TX;
+#else
+    const int gps_tx = -1;
+#endif
+#ifdef PIN_GPS_EN
+    const int gps_en = PIN_GPS_EN;
+#else
+    const int gps_en = -1;
+#endif
+    // GPS support and a pin assignment do not establish physical presence.
+    // Our optional-GPS startup policy intentionally skips hardware detection.
+    snprintf(reply, 160,
+             "> i2c-sda:%d,i2c-scl:%d,env-sda:%d,env-scl:%d,gps-rx:%d,gps-tx:%d,gps-en:%d,gps-driver:%s,gps-detected:unverified",
+             i2c_sda, i2c_scl, env_sda, env_scl, gps_rx, gps_tx, gps_en,
+#if ENV_INCLUDE_GPS
+             "compiled");
+#else
+             "absent");
+#endif
+    return true;
+  }
+
   if (strcmp(command, "get power.sleep") == 0) {
     sprintf(reply, "> sleeps:%lu,gpio:%lu,timer:%lu,ms:%llu,error:%d",
             static_cast<unsigned long>(light_sleep_count), static_cast<unsigned long>(light_sleep_gpio_wakes),

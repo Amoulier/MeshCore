@@ -117,6 +117,8 @@ The existing MeshCore CLI accepts these Heltec V4 additions:
 
 ```text
 get power.status
+get power.reset
+get sensor.pins
 get radio.power
 get radio.fem.rxgain
 get radio.rxprofile
@@ -131,6 +133,8 @@ set display on
 ```
 
 `get power.status` reports raw millivolts, the filtered percentage and the active power profile. `get radio.power` reports the maximum request presented to the board, the value actually applied after the FEM limit, and the estimated antenna output.
+
+`get power.reset` reports the ESP32 reset reason as a number and description. `get sensor.pins` reports the compiled main I2C, optional environment I2C and GPS RX/TX/enable pin assignments (`-1` means no assignment), plus whether the GPS driver is compiled. GPS presence remains `unverified`: these read-only commands do not probe hardware, start the GPS UART, change power rails or sample the ADC.
 
 RX profiles affect reception only and never alter TX power:
 
@@ -148,6 +152,8 @@ The Heltec V4 Companion does not require a computer or client-side CLI to disabl
 4. To restore the OLED, hold PRG again for about one second.
 
 Turning off the OLED does not immediately disable Bluetooth or LoRa. Incoming messages continue to be received without waking the screen. The restored display receives a new auto-off interval instead of switching off immediately.
+
+The Companion home page shows uptime from the ESP32's 64-bit boot timer while keeping the large pairing PIN. The Repeater status screen shows cached battery voltage and the power-saving setting. These indicators do not wake the screen or change its existing auto-off timing.
 
 ## Building
 
