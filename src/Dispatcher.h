@@ -98,6 +98,8 @@ public:
   virtual Packet* removeOutboundByIdx(int i) = 0;
   virtual void queueInbound(Packet* packet, uint32_t scheduled_for) = 0;
   virtual Packet* getNextInbound(uint32_t now) = 0;
+  // Includes delayed packets whose processing time has not arrived yet.
+  virtual int getInboundTotal() const = 0;
 };
 
 typedef uint32_t  DispatcherAction;
@@ -175,6 +177,8 @@ protected:
   virtual unsigned long getDutyCycleWindowMs() const { return 3600000; }
 
 public:
+  // A packet leaves the outbound queue before its asynchronous send completes.
+  bool isTransmitting() const { return outbound != nullptr; }
   void begin();
   void loop();
 
