@@ -2,6 +2,7 @@
 #include <Mesh.h>
 
 #include "MyMesh.h"
+#include <helpers/SafeSpiffs.h>
 
 #ifdef ETHERNET_ENABLED
   #define ETHERNET_CLI_BANNER "MeshCore Room Server CLI"
@@ -35,11 +36,23 @@ void setup() {
 #endif
 
 #ifdef DISPLAY_CLASS
+  DisplayDriver* boot_display = nullptr;
   if (display.begin()) {
+    boot_display = &display;
     display.startFrame();
     display.setCursor(0, 0);
     display.print("Please wait...");
     display.endFrame();
+  }
+#endif
+
+#if defined(ESP32)
+  if (!meshcoreMountSpiffs()) {
+#ifdef DISPLAY_CLASS
+    meshcoreHaltForStorageFailure(boot_display);
+#else
+    meshcoreHaltForStorageFailure();
+#endif
   }
 #endif
 
@@ -58,7 +71,6 @@ void setup() {
   IdentityStore store(LittleFS, "/identity");
   store.begin();
 #elif defined(ESP32)
-  SPIFFS.begin(true);
   fs = &SPIFFS;
   IdentityStore store(SPIFFS, "/identity");
 #else

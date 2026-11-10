@@ -76,6 +76,11 @@ jobs:
           for source in "${application_loops[@]}"; do
             test "$(grep -Ec '^  board\.loop\(\);$' "${source}")" -eq 1
             test "$(grep -Ec '^  board\.idle\(\);$' "${source}")" -eq 1
+            test "$(grep -Fc 'meshcoreMountSpiffs()' "${source}")" -eq 1
+            if grep -Eq 'SPIFFS\.begin[[:space:]]*\([[:space:]]*true' "${source}"; then
+              echo "error: unsafe automatic storage format in ${source}" >&2
+              exit 1
+            fi
           done
 
   unit-tests:
@@ -89,7 +94,7 @@ jobs:
         uses: ./.github/actions/setup-build-environment
 
       - name: Run native tests
-        run: pio test -e native -e native_kiss_modem -e native_serial_read_busy -e native_radio_cad -e native_gps_runtime -e native_micro_gps -vv
+        run: pio test -e native -e native_kiss_modem -e native_serial_read_busy -e native_radio_cad -e native_gps_runtime -e native_micro_gps -e native_spiffs_boot -vv
 
   firmware:
     name: Build ${{ matrix.environment }}

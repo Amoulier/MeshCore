@@ -374,6 +374,18 @@ void HeltecV4Board::begin()
 
 void HeltecV4Board::loop()
 {
+  checkCriticalBattery(true);
+}
+
+void HeltecV4Board::storageFailureLoop()
+{
+  // Startup stopped before radio_init(). Use GPIO holds/reset rather than the
+  // normal shutdown callback, which expects initialized radio and sensor APIs.
+  checkCriticalBattery(false);
+}
+
+void HeltecV4Board::checkCriticalBattery(bool runtime_shutdown)
+{
 #if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
   if (inhibit_sleep) {
     return;
@@ -392,8 +404,10 @@ void HeltecV4Board::loop()
       HELTEC_V4_BATTERY_CRITICAL_MILLIVOLTS,
       HELTEC_V4_BATTERY_CRITICAL_READINGS);
   if (critical_low_readings >= HELTEC_V4_BATTERY_CRITICAL_READINGS) {
-    enterCriticalBatterySleep(true, false);
+    enterCriticalBatterySleep(runtime_shutdown, !runtime_shutdown);
   }
+#else
+  (void)runtime_shutdown;
 #endif
 }
 

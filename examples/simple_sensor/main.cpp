@@ -1,4 +1,5 @@
 #include "SensorMesh.h"
+#include <helpers/SafeSpiffs.h>
 
 #ifdef DISPLAY_CLASS
   #include "UITask.h"
@@ -65,10 +66,22 @@ void setup() {
 #endif
 
 #ifdef DISPLAY_CLASS
+  DisplayDriver* boot_display = nullptr;
   if (display.begin()) {
+    boot_display = &display;
     display.startFrame();
     display.print("Please wait...");
     display.endFrame();
+  }
+#endif
+
+#if defined(ESP32)
+  if (!meshcoreMountSpiffs()) {
+#ifdef DISPLAY_CLASS
+    meshcoreHaltForStorageFailure(boot_display);
+#else
+    meshcoreHaltForStorageFailure();
+#endif
   }
 #endif
 
@@ -82,7 +95,6 @@ void setup() {
   fs = &InternalFS;
   IdentityStore store(InternalFS, "");
 #elif defined(ESP32)
-  SPIFFS.begin(true);
   fs = &SPIFFS;
   IdentityStore store(SPIFFS, "/identity");
 #elif defined(RP2040_PLATFORM)

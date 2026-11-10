@@ -2,6 +2,7 @@
 #include <Mesh.h>
 
 #include "MyMesh.h"
+#include <helpers/SafeSpiffs.h>
 
 #if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE && ARDUINO_USB_MODE == 1 && ARDUINO_USB_CDC_ON_BOOT
   #include <hal/usb_serial_jtag_ll.h>
@@ -61,11 +62,23 @@ void setup() {
 #endif
 
 #ifdef DISPLAY_CLASS
+  DisplayDriver* boot_display = nullptr;
   if (display.begin()) {
+    boot_display = &display;
     display.startFrame();
     display.setCursor(0, 0);
     display.print("Please wait...");
     display.endFrame();
+  }
+#endif
+
+#if defined(ESP32)
+  if (!meshcoreMountSpiffs()) {
+#ifdef DISPLAY_CLASS
+    meshcoreHaltForStorageFailure(boot_display);
+#else
+    meshcoreHaltForStorageFailure();
+#endif
   }
 #endif
 
@@ -82,7 +95,6 @@ void setup() {
   fs = &InternalFS;
   IdentityStore store(InternalFS, "");
 #elif defined(ESP32)
-  SPIFFS.begin(true);
   fs = &SPIFFS;
   IdentityStore store(SPIFFS, "/identity");
 #elif defined(RP2040_PLATFORM)

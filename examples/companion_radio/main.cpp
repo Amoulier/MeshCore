@@ -1,6 +1,7 @@
 #include <Arduino.h>   // needed for PlatformIO
 #include <Mesh.h>
 #include "MyMesh.h"
+#include <helpers/SafeSpiffs.h>
 
 // Believe it or not, this std C function is busted on some platforms!
 static uint32_t _atoi(const char* sp) {
@@ -198,6 +199,16 @@ void setup() {
   }
 #endif
 
+#if defined(ESP32)
+  if (!meshcoreMountSpiffs()) {
+#ifdef DISPLAY_CLASS
+    meshcoreHaltForStorageFailure(disp);
+#else
+    meshcoreHaltForStorageFailure();
+#endif
+  }
+#endif
+
   if (!radio_init()) { halt(); }
 
   fast_rng.begin(radio_driver.getRngSeed());
@@ -222,7 +233,6 @@ void setup() {
   store.begin();
   the_mesh.begin();
 #elif defined(ESP32)
-  SPIFFS.begin(true);
   store.begin();
   the_mesh.begin();
 #else

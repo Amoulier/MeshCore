@@ -33,6 +33,7 @@ class HeltecV4Board : public ESP32Board {
   uint16_t readBatteryMilliVoltsRaw();
   void updateReportedBatteryPercent(uint16_t battery_millivolts);
   void configureCpuPowerManagement();
+  void checkCriticalBattery(bool runtime_shutdown);
   void enterCriticalBatterySleep(bool runtime_shutdown, bool force_radio_reset);
   void releaseCriticalBatteryHolds();
   bool setLoRaFemLnaEnabled(bool enable);
@@ -46,6 +47,7 @@ public:
 
   void begin();
   void loop() override;
+  void storageFailureLoop();
   void idle(uint32_t delay_millis = 1);
   bool sleepWhileReceiving(uint32_t duration_millis);
   void enterDeepSleep(uint32_t secs);

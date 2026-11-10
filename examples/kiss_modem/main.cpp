@@ -2,6 +2,7 @@
 #include <target.h>
 #include <helpers/ArduinoHelpers.h>
 #include <helpers/IdentityStore.h>
+#include <helpers/SafeSpiffs.h>
 #include "KissModem.h"
 
 #if defined(NRF52_PLATFORM)
@@ -38,7 +39,6 @@ void loadOrCreateIdentity() {
   InternalFS.begin();
   IdentityStore store(InternalFS, "");
 #elif defined(ESP32)
-  SPIFFS.begin(true);
   IdentityStore store(SPIFFS, "/identity");
 #elif defined(RP2040_PLATFORM)
   LittleFS.begin();
@@ -77,6 +77,10 @@ void onGetStats(uint32_t* rx, uint32_t* tx, uint32_t* errors) {
 
 void setup() {
   board.begin();
+
+#if defined(ESP32)
+  if (!meshcoreMountSpiffs()) meshcoreHaltForStorageFailure();
+#endif
 
   if (!radio_init()) {
     halt();

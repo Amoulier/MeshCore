@@ -13,6 +13,7 @@
 #include <helpers/StaticPoolPacketManager.h>
 #include <helpers/SimpleMeshTables.h>
 #include <helpers/IdentityStore.h>
+#include <helpers/SafeSpiffs.h>
 #include <RTClib.h>
 #include <target.h>
 
@@ -575,6 +576,10 @@ void setup() {
   external_watchdog.begin();
 #endif
 
+#if defined(ESP32)
+  if (!meshcoreMountSpiffs()) meshcoreHaltForStorageFailure();
+#endif
+
   if (!radio_init()) { halt(); }
 
   fast_rng.begin(radio_driver.getRngSeed());
@@ -586,7 +591,6 @@ void setup() {
   LittleFS.begin();
   the_mesh.begin(LittleFS);
 #elif defined(ESP32)
-  SPIFFS.begin(true);
   the_mesh.begin(SPIFFS);
 #else
   #error "need to define filesystem"

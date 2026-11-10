@@ -1,7 +1,13 @@
 #include <Arduino.h>
 #include "target.h"
+#include <helpers/SafeSpiffs.h>
 
 HeltecV4Board board;
+
+void meshcoreStorageFailureIdle()
+{
+  board.storageFailureLoop();
+}
 
 #if defined(P_LORA_SCLK)
 static SPIClass spi;
