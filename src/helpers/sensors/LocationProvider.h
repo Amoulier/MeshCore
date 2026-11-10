@@ -26,6 +26,9 @@ public:
     virtual void stop() = 0;
     virtual void loop() = 0;
     virtual bool isEnabled() = 0;
+    // Advances only for a newly parsed positioning fix, never a cached read.
+    virtual uint32_t getFixSequence() const { return 0; }
+    virtual bool getFixAgeSeconds(uint32_t& seconds) const { seconds = 0; return false; }
 
     // Format compact diagnostics in the caller-provided buffer. Providers that
     // have more information (for example UART counters) can override this.

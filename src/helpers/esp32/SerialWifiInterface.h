@@ -10,7 +10,10 @@ class SerialWifiInterface : public BaseSerialInterface {
   unsigned long adv_restart_time;
 
   WiFiServer server;
-  WiFiClient client;
+  mutable WiFiClient client; // available() is logically a query but not const in Arduino.
+  int _last_read_available = 0;
+  uint32_t _last_read_millis = 0;
+  bool expirePartialRead();
 
   struct FrameHeader {
     uint8_t type;
@@ -52,12 +55,13 @@ public:
   bool isEnabled() const override { return _isEnabled; }
 
   bool isConnected() const override;
+  bool isReadBusy() const override;
   bool isWriteBusy() const override;
 
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;
 
-  bool hasReceivedFrameHeader();
+  bool hasReceivedFrameHeader() const;
   void resetReceivedFrameHeader();
 };
 

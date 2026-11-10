@@ -25,6 +25,7 @@ void setFlag(void) {
 }
 
 void RadioLibWrapper::begin() {
+  _cad_busy_count = 0;
   _radio->setPacketReceivedAction(setFlag);  // this is also SentComplete interrupt
   _preamble_sf = getSpreadingFactor();
   _radio->setPreambleLength(preambleLengthForSF(_preamble_sf)); // longer preamble for lower SF improves reliability
@@ -219,6 +220,7 @@ bool RadioLibWrapper::isChannelActive() {
     // try to read a non-existent packet and count a spurious recv error.
     state = STATE_IDLE;
     startRecv();
+    if (result == RADIOLIB_LORA_DETECTED && _cad_busy_count < UINT32_MAX) ++_cad_busy_count;
     if (result != RADIOLIB_CHANNEL_FREE) return true;
   }
 

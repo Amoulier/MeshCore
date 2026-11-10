@@ -405,7 +405,7 @@ void loop() {
   }
 #endif
   if (companion_sleep_enabled && !usb_host_active && !the_mesh.hasPendingWork() && radio_driver.isInRecvMode() &&
-      bluetooth_interface.isControllerSuspended() && !the_mesh.getNodePrefs()->gps_enabled
+      bluetooth_interface.isControllerSuspended() && !sensors.isGpsReceiverOn()
 #ifdef ENABLE_WIFI_INTERFACE
       && !wifi_enabled
 #endif

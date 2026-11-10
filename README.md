@@ -74,7 +74,7 @@ After five disconnected minutes, BLE releases its GATT objects and suspends both
 the host and controller. PRG can enable it again without rebooting or discarding
 queued LoRa messages. The processor can then enter light sleep in windows of at
 most 20 ms while the SX1262 and FEM stay in continuous RX. DIO1 and PRG wake it;
-a timer services background tasks. Pending transmissions, Wi-Fi, GPS, the lit
+a timer services background tasks. Pending transmissions, Wi-Fi, GPS acquisition, the lit
 OLED, buzzer activity and an attached computer's USB connection prevent sleep.
 The RX boost and LNA settings are preserved.
 
@@ -120,6 +120,7 @@ get power.status
 get power.reset
 get sensor.pins
 get radio.power
+get radio.cad
 get radio.fem.rxgain
 get radio.rxprofile
 set radio.rxprofile range
@@ -136,11 +137,37 @@ set display on
 
 `get power.reset` reports the ESP32 reset reason as a number and description. `get sensor.pins` reports the compiled main I2C, optional environment I2C and GPS RX/TX/enable pin assignments (`-1` means no assignment), plus whether the GPS driver is compiled. GPS presence remains `unverified`: these read-only commands do not probe hardware, start the GPS UART, change power rails or sample the ADC.
 
+`get radio.cad` reports whether hardware CAD is enabled and its busy-detection count since boot or the existing statistics reset. Only a real LoRa CAD detection increments the counter; it saturates at `UINT32_MAX`. Reading it does not enable CAD or alter reception. Pending serial bytes, queued BLE frames and incomplete USB/Wi-Fi frames also inhibit MCU sleep; a byte-stream fragment expires after one second without input.
+
 RX profiles affect reception only and never alter TX power:
 
 - `range`: SX1262 boosted RX plus the external LNA where controllable.
 - `balanced`: normal SX1262 RX plus the external LNA.
 - `battery`: normal SX1262 RX and external-LNA bypass where controllable.
+
+### Optional GPS duty cycle
+
+Existing GPS preferences keep their behavior. GPS stays completely off until its owner enables it; duty cycling is an additional opt-in, initially disabled. When selected, acquisition lasts up to 120 seconds, ends early after a new valid fix has held for five seconds, then rests for 900 seconds. A cached fix cannot complete the next acquisition.
+
+```text
+gps on
+gps off
+gps cycle on
+gps cycle off
+gps acquire 120
+gps rest 900
+gps hold 5
+gps interval 1
+get gps.cycle
+gps diag
+gps sync
+```
+
+Acquisition accepts 5–3600 seconds, rest 1–86400 seconds, and hold 0–60 seconds no greater than acquisition. GPS read interval accepts 0–86400 seconds; its existing zero value uses a one-second runtime interval. Settings persist in the role's existing protected preferences; older preferences default to duty cycling off. Companion custom settings expose `gps`, `gps_interval`, `gps_cycle`, `gps_acquire`, `gps_rest` and `gps_hold` as well.
+
+`get gps.cycle` separates the owner's request, physical receiver state, next transition and age of the last fix, without coordinates. Status and telemetry reads never wake GPS. Explicit `gps sync` may interrupt rest only while GPS is authorized. Turning off the cycle, or the Repeater's general power-saving setting, restores continuous operation for an enabled GPS; an owner's `gps off` remains authoritative. Period changes keep elapsed phase time instead of restarting it.
+
+During GPS rest, its UART is stopped and its power claim is released while other OLED/sensor claims remain valid. MCU sleep can then use the existing bounded windows if USB, BLE, screen and pending-work guards permit it. The last location is retained in RAM with its age. Changing GPS settings preserves the saved static location. These controls do not change LoRa RX, TX power or prove a particular current/autonomy improvement.
 
 ## On-device OLED control
 

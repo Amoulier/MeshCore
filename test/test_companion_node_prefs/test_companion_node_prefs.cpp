@@ -64,6 +64,52 @@ public:
   }
 };
 
+TEST(CompanionNodePrefs, LegacyGpsConfigurationDoesNotOptIntoDutyCycling) {
+  ReplayStream input("{gps:{en:1,int:30,adv_loc:1},radio:{tx:22,rxgain:1,fem_rxgain:1}}");
+  NodePrefs prefs;
+  ASSERT_TRUE(prefs.loadSerial(input));
+  prefs.gps_cycle.normalize();
+  EXPECT_EQ(1, prefs.gps_enabled);
+  EXPECT_EQ(30U, prefs.gps_interval);
+  EXPECT_EQ(1, prefs.advert_loc_policy);
+  EXPECT_EQ(0, prefs.gps_cycle.enabled);
+  EXPECT_EQ(22, prefs.tx_power_dbm);
+  EXPECT_EQ(1, prefs.radio_fem_rxgain);
+}
+
+TEST(CompanionNodePrefs, GpsCycleRoundTripPreservesExistingRadioAndGpsPreferences) {
+  ReplayStream input("{gps:{en:1,int:13,cycle:{en:1,acquire:30,rest:120,hold:4},adv_loc:1},radio:{tx:22,rxgain:1,fem_rxgain:1}}");
+  NodePrefs saved;
+  ASSERT_TRUE(saved.loadSerial(input));
+  saved.gps_cycle.normalize();
+  CaptureStream output;
+  ASSERT_TRUE(saved.saveSerial(output));
+  ReplayStream replay(output.text().c_str());
+  NodePrefs loaded;
+  ASSERT_TRUE(loaded.loadSerial(replay));
+  loaded.gps_cycle.normalize();
+  EXPECT_EQ(1, loaded.gps_enabled);
+  EXPECT_EQ(13U, loaded.gps_interval);
+  EXPECT_EQ(1, loaded.advert_loc_policy);
+  EXPECT_EQ(1, loaded.gps_cycle.enabled);
+  EXPECT_EQ(30U, loaded.gps_cycle.acquire);
+  EXPECT_EQ(120U, loaded.gps_cycle.rest);
+  EXPECT_EQ(4U, loaded.gps_cycle.hold);
+  EXPECT_EQ(22, loaded.tx_power_dbm);
+  EXPECT_EQ(1, loaded.radio_fem_rxgain);
+}
+
+TEST(CompanionNodePrefs, InvalidGpsCycleOptInCannotNarrowIntoAnEnabledFlag) {
+  ReplayStream input("{gps:{en:0,cycle:{en:257,acquire:30,rest:120,hold:4}},radio:{tx:22}}");
+  NodePrefs prefs;
+  ASSERT_TRUE(prefs.loadSerial(input));
+  prefs.gps_cycle.normalize();
+  EXPECT_EQ(0, prefs.gps_enabled);
+  EXPECT_EQ(0, prefs.gps_cycle.enabled);
+  EXPECT_EQ(120U, prefs.gps_cycle.acquire);
+  EXPECT_EQ(22, prefs.tx_power_dbm);
+}
+
 #if 0
 // Re-enable test once we can SET fem_ values in companion
 TEST(CompanionNodePrefs, RxGainSettingsRoundTripIndependently) {

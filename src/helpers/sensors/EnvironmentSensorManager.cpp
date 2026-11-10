@@ -3,6 +3,20 @@
 #include <Wire.h>
 #include <helpers/PersistentWriteGuard.h>
 
+#if ENV_INCLUDE_GPS
+static bool parseGpsNumber(const char* text, uint32_t maximum, uint32_t& value) {
+  if (text == nullptr || *text == 0) return false;
+  uint32_t parsed = 0;
+  for (const char* p = text; *p; ++p) {
+    if (*p < '0' || *p > '9' || parsed > (maximum - (*p - '0')) / 10U) return false;
+    parsed = parsed * 10U + (*p - '0');
+    if (parsed > maximum) return false;
+  }
+  value = parsed;
+  return true;
+}
+#endif
+
 #if ENV_PIN_SDA && ENV_PIN_SCL
 #define TELEM_WIRE &Wire1  // Use Wire1 as the I2C bus for Environment Sensors
 #else
@@ -711,26 +725,32 @@ bool EnvironmentSensorManager::querySensors(uint8_t requester_permissions, Cayen
 int EnvironmentSensorManager::getNumSettings() const {
   int settings = 0;
   #if ENV_INCLUDE_GPS
-    if (gps_detected) settings++;  // only show GPS setting if GPS is detected
+    if (gps_detected) settings += 6;
   #endif
   return settings;
 }
 
 const char* EnvironmentSensorManager::getSettingName(int i) const {
-  int settings = 0;
   #if ENV_INCLUDE_GPS
-    if (gps_detected && i == settings++) {
-      return "gps";
+    static const char* const names[] = {"gps", "gps_interval", "gps_cycle", "gps_acquire", "gps_rest", "gps_hold"};
+    if (gps_detected && i >= 0 && i < 6) {
+      return names[i];
     }
   #endif
   return NULL;
 }
 
 const char* EnvironmentSensorManager::getSettingValue(int i) const {
-  int settings = 0;
   #if ENV_INCLUDE_GPS
-    if (gps_detected && i == settings++) {
-      return gps_active ? "1" : "0";
+    if (gps_detected && i >= 0 && i < 6) {
+      if (i == 0) return gps_active ? "1" : "0";
+      if (i == 2) return _gps_cycle_enabled ? "1" : "0";
+      const gps::GpsDutyCycleConfig& config = _gps_cycle.config();
+      const uint32_t value = i == 1 ? gps_update_interval_sec :
+          (i == 3 ? config.acquire_seconds : (i == 4 ? config.rest_seconds : config.fix_hold_seconds));
+      static char buffer[12];
+      snprintf(buffer, sizeof(buffer), "%lu", static_cast<unsigned long>(value));
+      return buffer;
     }
   #endif
   return NULL;
@@ -738,42 +758,122 @@ const char* EnvironmentSensorManager::getSettingValue(int i) const {
 
 bool EnvironmentSensorManager::setSettingValue(const char* name, const char* value) {
   #if ENV_INCLUDE_GPS
+  if (name == nullptr || value == nullptr) return false;
   if (gps_detected && strcmp(name, "gps") == 0) {
-    if (strcmp(value, "0") == 0) {
-      stop_gps();
-    } else {
-      start_gps();
-    }
+    if (strcmp(value, "0") != 0 && strcmp(value, "1") != 0) return false;
+    gps_active = value[0] == '1';
+    reconcileGpsPower();
     return true;
   }
   if (strcmp(name, "gps_interval") == 0) {
-    uint32_t interval_seconds = atoi(value);
+    uint32_t interval_seconds;
+    if (!parseGpsNumber(value, 86400, interval_seconds)) return false;
     gps_update_interval_sec = interval_seconds > 0 ? interval_seconds : 1;
     return true;
   }
+  if (strcmp(name, "gps_cycle") == 0) {
+    if (strcmp(value, "0") != 0 && strcmp(value, "1") != 0) return false;
+    return configureGpsCycle(_gps_cycle.config(), value[0] == '1');
+  }
+  gps::GpsDutyCycleConfig config = _gps_cycle.config();
+  uint32_t parsed;
+  if (strcmp(name, "gps_acquire") == 0) {
+    if (!parseGpsNumber(value, 3600, parsed)) return false;
+    config.acquire_seconds = parsed;
+  } else if (strcmp(name, "gps_rest") == 0) {
+    if (!parseGpsNumber(value, 86400, parsed)) return false;
+    config.rest_seconds = parsed;
+  } else if (strcmp(name, "gps_hold") == 0) {
+    if (!parseGpsNumber(value, 60, parsed)) return false;
+    config.fix_hold_seconds = parsed;
+  } else {
+    return false;
+  }
+  return configureGpsCycle(config, _gps_cycle_enabled);
   #endif
   return false;  // not supported
 }
 
 #if ENV_INCLUDE_GPS
+bool EnvironmentSensorManager::configureGpsCycle(const gps::GpsDutyCycleConfig& config, bool enabled) {
+  if (!gps_detected || !_gps_cycle.configure(config)) return false;
+  _gps_cycle_enabled = enabled;
+  reconcileGpsPower();
+  return true;
+}
+
+void EnvironmentSensorManager::setPowerSavingEnabled(bool enabled) {
+  _gps_power_saving_allowed = enabled;
+  reconcileGpsPower();
+}
+
+void EnvironmentSensorManager::cacheGpsFix() {
+  if (!gps_awake || !_location->isValid()) return;
+  node_lat = static_cast<double>(_location->getLatitude()) / 1000000.0;
+  node_lon = static_cast<double>(_location->getLongitude()) / 1000000.0;
+  node_altitude = static_cast<double>(_location->getAltitude()) / 1000.0;
+}
+
+void EnvironmentSensorManager::reconcileGpsPower() {
+  const auto action = _gps_cycle.update(millis(), gps_active,
+      _gps_cycle_enabled && _gps_power_saving_allowed, _location->isValid(), _location->getFixSequence());
+  if (action == gps::GpsDutyCyclePolicy::Action::Start) {
+    start_gps();
+  } else if (action == gps::GpsDutyCyclePolicy::Action::Stop) {
+    cacheGpsFix();
+    stop_gps();
+  }
+}
+
+bool EnvironmentSensorManager::requestGpsSync() {
+  if (!gps_active) return false;
+  _location->syncTime();
+  // Only an explicit request may interrupt rest. Re-enter acquisition with a
+  // new fix baseline; ordinary telemetry never invokes this path.
+  const auto action = _gps_cycle.update(millis(), true, false, false, _location->getFixSequence());
+  if (action == gps::GpsDutyCyclePolicy::Action::Start) start_gps();
+  reconcileGpsPower();
+  return true;
+}
+
+void EnvironmentSensorManager::formatGpsCycleDiagnostics(char* out, size_t size) {
+  if (!size) return;
+  const char* state = "off";
+  switch (_gps_cycle.state()) {
+    case gps::GpsDutyCyclePolicy::State::Continuous: state = "continuous"; break;
+    case gps::GpsDutyCyclePolicy::State::Acquiring: state = "acquiring"; break;
+    case gps::GpsDutyCyclePolicy::State::Resting: state = "resting"; break;
+    default: break;
+  }
+  char age[12];
+  uint32_t age_seconds;
+  if (_location->getFixAgeSeconds(age_seconds)) snprintf(age, sizeof(age), "%lu", static_cast<unsigned long>(age_seconds));
+  else strcpy(age, "never");
+  const gps::GpsDutyCycleConfig& config = _gps_cycle.config();
+  const uint32_t remaining = _gps_cycle.millisUntilTransition(millis());
+  snprintf(out, size,
+      "> req:%u,cycle:%u,allowed:%u,state:%s,awake:%u,acq:%lu,rest:%lu,hold:%lu,next:%ld,fix:%u,age:%s",
+      gps_active ? 1U : 0U, _gps_cycle_enabled ? 1U : 0U, _gps_power_saving_allowed ? 1U : 0U,
+      state, gps_awake ? 1U : 0U, static_cast<unsigned long>(config.acquire_seconds),
+      static_cast<unsigned long>(config.rest_seconds), static_cast<unsigned long>(config.fix_hold_seconds),
+      remaining == gps::GpsDutyCyclePolicy::NO_TRANSITION ? -1L : static_cast<long>(remaining / 1000U),
+      gps_awake && _location->isValid() ? 1U : 0U, age);
+}
+
 void EnvironmentSensorManager::initBasicGPS() {
-
-  Serial1.setPins(PIN_GPS_TX, PIN_GPS_RX);
-
-  #ifdef GPS_BAUD_RATE
-  Serial1.begin(GPS_BAUD_RATE);
-  #else
-  Serial1.begin(9600);
-  #endif
-
 #if defined(HELTEC_V4_SKIP_GPS_STARTUP_PROBE) && HELTEC_V4_SKIP_GPS_STARTUP_PROBE
-  // Keep UART ready for a later user enable, but do not power, reset, probe or
-  // wait for the optional expansion GPS during boot.
+  // Do not start UART, power, reset or probe an optional GPS while it is off.
   gps_detected = true;
   _location->stop();
-  Serial1.end();
   gps_active = false;
   return;
+#endif
+
+  Serial1.setPins(PIN_GPS_TX, PIN_GPS_RX);
+#ifdef GPS_BAUD_RATE
+  Serial1.begin(GPS_BAUD_RATE);
+#else
+  Serial1.begin(9600);
 #endif
 
   // Try to detect if GPS is physically connected to determine if we should expose the setting
@@ -903,7 +1003,8 @@ bool EnvironmentSensorManager::gpsIsAwake(uint8_t ioPin){
 #endif
 
 void EnvironmentSensorManager::start_gps() {
-  gps_active = true;
+  if (gps_awake) return;
+  gps_awake = true;
   #ifdef RAK_WISBLOCK_GPS
     #ifndef RAK_3401
     pinMode(gpsResetPin, OUTPUT);
@@ -920,6 +1021,7 @@ void EnvironmentSensorManager::start_gps() {
 #endif
   _location->begin();
   _location->reset();
+  _location->syncTime();
 
 #ifndef PIN_GPS_EN
   MESH_DEBUG_PRINTLN("Start GPS is N/A on this board. Actual GPS state unchanged");
@@ -927,7 +1029,8 @@ void EnvironmentSensorManager::start_gps() {
 }
 
 void EnvironmentSensorManager::stop_gps() {
-  gps_active = false;
+  if (!gps_awake) return;
+  gps_awake = false;
   #ifdef RAK_WISBLOCK_GPS
     #ifndef RAK_3401 // rak3401 shouldn't turn off WB_IO2 as it powers the PA
     pinMode(gpsResetPin, OUTPUT);
@@ -949,33 +1052,15 @@ void EnvironmentSensorManager::stop_gps() {
 void EnvironmentSensorManager::loop() {
 
   #if ENV_INCLUDE_GPS
-  static unsigned long next_gps_update = 0;
-  if (gps_active) {
+  reconcileGpsPower();
+  if (gps_awake) {
     _location->loop();
   }
-  if ((long)(millis() - next_gps_update) > 0) {
-
-    if(gps_active){
-    #ifdef RAK_WISBLOCK_GPS
-    if ((i2cGPSFlag || serialGPSFlag) && _location->isValid()) {
-      node_lat = ((double)_location->getLatitude())/1000000.;
-      node_lon = ((double)_location->getLongitude())/1000000.;
-      MESH_DEBUG_PRINTLN("lat %f lon %f", node_lat, node_lon);
-      node_altitude = ((double)_location->getAltitude()) / 1000.0;
-      MESH_DEBUG_PRINTLN("lat %f lon %f alt %f", node_lat, node_lon, node_altitude);
-    }
-    #else
-    if (_location->isValid()) {
-      node_lat = ((double)_location->getLatitude())/1000000.;
-      node_lon = ((double)_location->getLongitude())/1000000.;
-      MESH_DEBUG_PRINTLN("lat %f lon %f", node_lat, node_lon);
-      node_altitude = ((double)_location->getAltitude()) / 1000.0;
-      MESH_DEBUG_PRINTLN("lat %f lon %f alt %f", node_lat, node_lon, node_altitude);
-    }
-    #endif
-    }
-    next_gps_update = millis() + (gps_update_interval_sec * 1000);
+  if (static_cast<int32_t>(static_cast<uint32_t>(millis()) - _next_gps_update) >= 0) {
+    cacheGpsFix();
+    _next_gps_update = millis() + gps_update_interval_sec * 1000U;
   }
+  reconcileGpsPower();
   #endif
   #if ENV_INCLUDE_BME680_BSEC
   if (bsec_active && bsec_iaq.run()) {

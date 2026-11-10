@@ -113,6 +113,7 @@ public:
   bool isConnected() const override;
   bool isControllerSuspended() const { return controller_suspended; }
   int getPowerError() const { return power_error; }
+  bool isReadBusy() const override;
   bool isWriteBusy() const override;
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;

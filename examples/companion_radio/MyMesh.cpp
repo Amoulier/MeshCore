@@ -5,6 +5,7 @@
 #include <WiFi.h>
 #endif
 #include <Mesh.h>
+#include <helpers/sensors/GpsCommands.h>
 #ifdef HELTEC_V4_ALLOW_USB_SLEEP_TEST
 // RAM-only collector: avoid USB writes while its peripheral is asleep. Only
 // explicitly armed, marked test packets are consumed; normal traffic is intact.
@@ -1026,6 +1027,7 @@ void MyMesh::begin() {
 #endif
   _prefs.gps_enabled = constrain(_prefs.gps_enabled, 0, 1);  // Ensure boolean 0 or 1
   _prefs.gps_interval = constrain(_prefs.gps_interval, 0, 86400);  // Max 24 hours
+  _prefs.gps_cycle.normalize();
 
   _active_ble_pin = _prefs.ble_pin;
 
@@ -1907,19 +1909,40 @@ void MyMesh::handleCmdFrame(size_t len) {
     char *np = strchr(sp, ':'); // look for separator char
     if (np) {
       *np++ = 0; // modify 'cmd_frame', replace ':' with null
-      bool success = sensors.setSettingValue(sp, np);
+      bool success = false;
+#if ENV_INCLUDE_GPS == 1
+      const char* gps_argument = nullptr;
+      if (strcmp(sp, "gps") == 0) {
+        if (strcmp(np, "0") == 0) gps_argument = "gps off";
+        else if (strcmp(np, "1") == 0) gps_argument = "gps on";
+      } else if (strcmp(sp, "gps_cycle") == 0) {
+        if (strcmp(np, "0") == 0) gps_argument = "gps cycle off";
+        else if (strcmp(np, "1") == 0) gps_argument = "gps cycle on";
+      }
+      const char* gps_prefix = nullptr;
+      if (strcmp(sp, "gps_interval") == 0) gps_prefix = "gps interval ";
+      else if (strcmp(sp, "gps_acquire") == 0) gps_prefix = "gps acquire ";
+      else if (strcmp(sp, "gps_rest") == 0) gps_prefix = "gps rest ";
+      else if (strcmp(sp, "gps_hold") == 0) gps_prefix = "gps hold ";
+      char gps_command[64];
+      if (gps_prefix) {
+        const int written = snprintf(gps_command, sizeof(gps_command), "%s%s", gps_prefix, np);
+        if (written > 0 && written < static_cast<int>(sizeof(gps_command))) gps_argument = gps_command;
+      }
+      if (gps_argument) {
+        char gps_reply[160];
+        bool changed;
+        gps::handleGpsCommand(gps_argument, sensors, _prefs.gps_enabled, _prefs.gps_interval,
+                             _prefs.gps_cycle, changed, gps_reply, sizeof(gps_reply));
+        success = strcmp(gps_reply, "ok") == 0;
+        if (success && changed) saveGpsPrefs();
+      } else if (strncmp(sp, "gps", 3) != 0) {
+        success = sensors.setSettingValue(sp, np);
+      }
+#else
+      success = sensors.setSettingValue(sp, np);
+#endif
       if (success) {
-        #if ENV_INCLUDE_GPS == 1
-        // Update node preferences for GPS settings
-        if (strcmp(sp, "gps") == 0) {
-          _prefs.gps_enabled = (np[0] == '1') ? 1 : 0;
-          savePrefs();
-        } else if (strcmp(sp, "gps_interval") == 0) {
-          uint32_t interval_seconds = atoi(np);
-          _prefs.gps_interval = constrain(interval_seconds, 0, 86400);
-          savePrefs();
-        }
-        #endif
         writeOKFrame();
       } else {
         writeErrFrame(ERR_CODE_ILLEGAL_ARG);
@@ -2163,6 +2186,14 @@ bool MyMesh::handleCommand(const char* command, uint32_t sender_timestamp, char*
     if (_prefs.isDirty()) { savePrefs(); }
     return true;
   }
+#if ENV_INCLUDE_GPS == 1
+  bool gps_changed;
+  if (gps::handleGpsCommand(command, sensors, _prefs.gps_enabled, _prefs.gps_interval,
+                           _prefs.gps_cycle, gps_changed, reply, 160)) {
+    if (gps_changed) saveGpsPrefs();
+    return true;
+  }
+#endif
 
   if (strcmp(command, "reboot") == 0) {
     board.reboot(); // doesn't return
@@ -2518,5 +2549,5 @@ bool MyMesh::advert() {
 // To check if there is pending work
 bool MyMesh::hasPendingWork() const {
   return _mgr->getOutboundTotal() > 0 || _mgr->getInboundTotal() > 0 ||
-         isTransmitting() || dirty_contacts_expiry != 0;
+         isTransmitting() || dirty_contacts_expiry != 0 || (_serial && _serial->isReadBusy());
 }

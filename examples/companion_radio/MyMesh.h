@@ -209,14 +209,21 @@ public:
     _prefs.clearDirty();
   }
 
+  // GPS administration must not overwrite the owner's saved static position
+  // with a fix that happened to arrive while changing an acquisition period.
+  void saveGpsPrefs() {
+    _store->savePrefs(_prefs);
+    _prefs.clearDirty();
+  }
+
 #if ENV_INCLUDE_GPS == 1
   void applyGpsPrefs() {
+    _prefs.gps_cycle.normalize();
+    _prefs.gps_cycle.apply(sensors);
     sensors.setSettingValue("gps", _prefs.gps_enabled ? "1" : "0");
-    if (_prefs.gps_interval > 0) {
-      char interval_str[12];  // Max: 24 hours = 86400 seconds (5 digits + null)
-      sprintf(interval_str, "%u", _prefs.gps_interval);
-      sensors.setSettingValue("gps_interval", interval_str);
-    }
+    char interval_str[12];
+    snprintf(interval_str, sizeof(interval_str), "%lu", static_cast<unsigned long>(_prefs.gps_interval));
+    sensors.setSettingValue("gps_interval", interval_str);
   }
 #endif
 

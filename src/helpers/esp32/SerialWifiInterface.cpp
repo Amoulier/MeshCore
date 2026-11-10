@@ -43,16 +43,45 @@ bool SerialWifiInterface::isWriteBusy() const {
   return false;
 }
 
-bool SerialWifiInterface::hasReceivedFrameHeader() {
+bool SerialWifiInterface::isReadBusy() const {
+  if (!_isEnabled) return false;
+  return recv_queue_len > 0 || client.available() > 0 ||
+         (hasReceivedFrameHeader() &&
+          static_cast<uint32_t>(millis() - _last_read_millis) < SERIAL_RX_FRAME_TIMEOUT_MILLIS);
+}
+
+bool SerialWifiInterface::hasReceivedFrameHeader() const {
   return received_frame_header.type != 0 && received_frame_header.length != 0;
 }
 
 void SerialWifiInterface::resetReceivedFrameHeader() {
   received_frame_header.type = 0;
   received_frame_header.length = 0;
+  _last_read_available = client.available();
+  _last_read_millis = millis();
+}
+
+bool SerialWifiInterface::expirePartialRead() {
+  const int available = client.available();
+  const uint32_t now = millis();
+  if (available != _last_read_available) {
+    _last_read_available = available;
+    _last_read_millis = now;
+  }
+  if ((available > 0 || hasReceivedFrameHeader()) &&
+      static_cast<uint32_t>(now - _last_read_millis) >= SERIAL_RX_FRAME_TIMEOUT_MILLIS) {
+    // Drop only the currently buffered fragment, never block waiting for bytes.
+    for (int i = 0; i < available; i++) {
+      if (client.read() < 0) break;
+    }
+    resetReceivedFrameHeader();
+    return true;
+  }
+  return false;
 }
 
 size_t SerialWifiInterface::checkRecvFrame(uint8_t dest[]) {
+  if (!_isEnabled) return 0;
   // check if new client connected
   auto newClient = server.available();
   if (newClient) {
@@ -77,11 +106,13 @@ size_t SerialWifiInterface::checkRecvFrame(uint8_t dest[]) {
   } else {
     if (deviceConnected) {
       deviceConnected = false;
+      resetReceivedFrameHeader();
       WIFI_DEBUG_PRINTLN("Disconnected");
     }
   }
 
   if (deviceConnected) {
+    if (expirePartialRead()) return 0;
     if (send_queue_len > 0) {   // first, check send queue
       
       _last_write = millis();
@@ -110,6 +141,8 @@ size_t SerialWifiInterface::checkRecvFrame(uint8_t dest[]) {
           // read frame header
           client.readBytes(&received_frame_header.type, 1);
           client.readBytes((uint8_t*)&received_frame_header.length, 2);
+          _last_read_available = client.available();
+          _last_read_millis = millis();
 
         }
 

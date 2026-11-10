@@ -21,10 +21,17 @@ protected:
 
   bool     gps_detected = false;
   bool     gps_active = false;
+  bool     gps_awake = false;
   uint32_t gps_update_interval_sec = 1;
 
   #if ENV_INCLUDE_GPS
   LocationProvider* _location;
+  gps::GpsDutyCyclePolicy _gps_cycle;
+  bool _gps_cycle_enabled = false;
+  bool _gps_power_saving_allowed = true;
+  uint32_t _next_gps_update = 0;
+  void reconcileGpsPower();
+  void cacheGpsFix();
   void start_gps();
   void stop_gps();
   void initBasicGPS();
@@ -39,6 +46,11 @@ public:
   EnvironmentSensorManager(LocationProvider &location): _location(&location){};
   LocationProvider* getLocationProvider() { return _location; }
   bool isGPSDetected() const override { return gps_detected; }
+  bool isGpsReceiverOn() const override { return gps_awake; }
+  bool configureGpsCycle(const gps::GpsDutyCycleConfig& config, bool enabled) override;
+  void setPowerSavingEnabled(bool enabled) override;
+  bool requestGpsSync() override;
+  void formatGpsCycleDiagnostics(char* out, size_t size) override;
   #else
   EnvironmentSensorManager(){};
   #endif

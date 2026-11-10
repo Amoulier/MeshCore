@@ -240,7 +240,7 @@ void loop() {
   if (the_mesh.getNodePrefs()->powersaving_enabled && !the_mesh.hasPendingWork()) {
 #if defined(HELTEC_V4_SOLAR_PROFILE) && HELTEC_V4_SOLAR_PROFILE
     if (!usb_host_active && radio_driver.isInRecvMode() &&
-        !the_mesh.getNodePrefs()->gps_enabled &&
+        !sensors.isGpsReceiverOn() &&
 #ifdef DISPLAY_CLASS
         !ui_task.isDisplayOn() &&
 #endif

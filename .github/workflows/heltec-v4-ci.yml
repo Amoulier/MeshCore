@@ -89,7 +89,7 @@ jobs:
         uses: ./.github/actions/setup-build-environment
 
       - name: Run native tests
-        run: pio test -e native -e native_kiss_modem -vv
+        run: pio test -e native -e native_kiss_modem -e native_serial_read_busy -e native_radio_cad -e native_gps_runtime -e native_micro_gps -vv
 
   firmware:
     name: Build ${{ matrix.environment }}

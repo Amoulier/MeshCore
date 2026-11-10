@@ -5,6 +5,7 @@
 #include "TxtDataHelpers.h"
 #include <RTClib.h>
 #include <helpers/PersistentWriteGuard.h>
+#include <helpers/sensors/GpsCommands.h>
 
 #ifndef BRIDGE_MAX_BAUD
 #define BRIDGE_MAX_BAUD 115200
@@ -69,6 +70,15 @@ void CommonCLI::loadPrefs(FILESYSTEM* fs) {
     loadPrefsInt(fs, "/com_prefs");
     savePrefs(fs);
   }
+#if ENV_INCLUDE_GPS
+  _prefs->gps_cycle.normalize();
+  _sensors->setPowerSavingEnabled(_prefs->powersaving_enabled != 0);
+  _prefs->gps_cycle.apply(*_sensors);
+  char interval[12];
+  snprintf(interval, sizeof(interval), "%lu", static_cast<unsigned long>(_prefs->gps_interval));
+  _sensors->setSettingValue("gps_interval", interval);
+  _sensors->setSettingValue("gps", _prefs->gps_enabled ? "1" : "0");
+#endif
 }
 
 void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {  // Legacy prefs loader
@@ -241,6 +251,14 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, char* command, char* re
       if (_prefs->isDirty()) { savePrefs(); }
       return;
     }
+#if ENV_INCLUDE_GPS
+    bool gps_changed;
+    if (gps::handleGpsCommand(command, *_sensors, _prefs->gps_enabled, _prefs->gps_interval,
+                             _prefs->gps_cycle, gps_changed, reply, 160)) {
+      if (gps_changed) savePrefs();
+      return;
+    }
+#endif
 
     if (memcmp(command, "poweroff", 8) == 0 || memcmp(command, "shutdown", 8) == 0) {
       _board->powerOff();  // doesn't return
@@ -382,45 +400,7 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, char* command, char* re
     } else if (memcmp(command, "region", 6) == 0) {
       handleRegionCmd(command, reply);
 #if ENV_INCLUDE_GPS == 1
-    } else if (memcmp(command, "gps on", 6) == 0) {
-      if (_sensors->setSettingValue("gps", "1")) {
-        _prefs->gps_enabled = 1;
-        savePrefs();
-        strcpy(reply, "ok");
-      } else {
-        strcpy(reply, "gps toggle not found");
-      }
-    } else if (memcmp(command, "gps off", 7) == 0) {
-      if (_sensors->setSettingValue("gps", "0")) {
-        _prefs->gps_enabled = 0;
-        savePrefs();
-        strcpy(reply, "ok");
-      } else {
-        strcpy(reply, "gps toggle not found");
-      }
-    } else if (memcmp(command, "gps sync", 8) == 0) {
-      LocationProvider * l = _sensors->getLocationProvider();
-      if (l != NULL) {
-        l->syncTime();
-        strcpy(reply, "ok");
-      } else {
-        strcpy(reply, "gps provider not found");
-      }
-    } else if (strcmp(command, "gps diag") == 0) {
-      LocationProvider * l = _sensors->getLocationProvider();
-      if (l != NULL) {
-        const char* setting = _sensors->getSettingByKey("gps");
-        bool requested = setting != NULL && strcmp(setting, "1") == 0;
-        int prefix_len = snprintf(reply, 160, "req:%u ", requested ? 1U : 0U);
-        if (prefix_len < 0 || prefix_len >= 160) {
-          reply[159] = 0;
-        } else {
-          l->formatDiagnostics(reply + prefix_len, 160 - prefix_len);
-        }
-      } else {
-        strcpy(reply, "gps provider not found");
-      }
-    } else if (memcmp(command, "gps setloc", 10) == 0) {
+    } else if (strcmp(command, "gps setloc") == 0) {
       _prefs->node_lat = _sensors->node_lat;
       _prefs->node_lon = _sensors->node_lon;
       savePrefs();
@@ -455,32 +435,16 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, char* command, char* re
       } else {
         strcpy(reply, "error");
       }
-    } else if (memcmp(command, "gps", 3) == 0) {
-      LocationProvider * l = _sensors->getLocationProvider();
-      if (l != NULL) {
-        bool enabled = l->isEnabled(); // is EN pin on ?
-        bool fix = l->isValid();       // has fix ?
-        int sats = l->satellitesCount();
-        bool active = !strcmp(_sensors->getSettingByKey("gps"), "1");
-        if (enabled) {
-          sprintf(reply, "on, %s, %s, %d sats",
-            active?"active":"deactivated",
-            fix?"fix":"no fix",
-            sats);
-        } else {
-          strcpy(reply, "off");
-        }
-      } else {
-        strcpy(reply, "Can't find GPS");
-      }
 #endif
     } else if (memcmp(command, "powersaving on", 14) == 0) {
 #if defined(NRF52_PLATFORM)
       _prefs->powersaving_enabled = 1;
+      _sensors->setPowerSavingEnabled(true);
       savePrefs();
       strcpy(reply, "on - Immediate effect");
 #elif defined(ESP32) && !defined(WITH_BRIDGE)
       _prefs->powersaving_enabled = 1;
+      _sensors->setPowerSavingEnabled(true);
       savePrefs();
       strcpy(reply, "on - After 2 minutes");
 #elif defined(WITH_BRIDGE)
@@ -490,6 +454,7 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, char* command, char* re
 #endif
     } else if (memcmp(command, "powersaving off", 15) == 0) {
       _prefs->powersaving_enabled = 0;
+      _sensors->setPowerSavingEnabled(false);
       savePrefs();
       strcpy(reply, "off");
     } else if (memcmp(command, "powersaving", 11) == 0) {

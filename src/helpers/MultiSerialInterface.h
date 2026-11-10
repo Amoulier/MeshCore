@@ -140,6 +140,14 @@ public:
     }
   }
 
+  bool isReadBusy() const override {
+    if (!_enabled) return false;
+    for (const auto& iface : _interfaces) {
+      if (iface.instance && iface.instance->isEnabled() && iface.instance->isReadBusy()) return true;
+    }
+    return false;
+  }
+
   bool isWriteBusy() const override {
     // not busy when disabled
     if(!_enabled){

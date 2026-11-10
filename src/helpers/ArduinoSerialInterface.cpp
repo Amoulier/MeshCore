@@ -21,6 +21,13 @@ bool ArduinoSerialInterface::isWriteBusy() const {
   return false;
 }
 
+bool ArduinoSerialInterface::isReadBusy() const {
+  if (!_isEnabled || _serial == nullptr) return false;
+  return _serial->available() > 0 ||
+         (_state != RECV_STATE_IDLE &&
+          static_cast<uint32_t>(millis() - _last_read_millis) < SERIAL_RX_FRAME_TIMEOUT_MILLIS);
+}
+
 size_t ArduinoSerialInterface::writeFrame(const uint8_t src[], size_t len) {
   if (len > MAX_FRAME_SIZE) {
     // frame is too big!
@@ -37,9 +44,17 @@ size_t ArduinoSerialInterface::writeFrame(const uint8_t src[], size_t len) {
 }
 
 size_t ArduinoSerialInterface::checkRecvFrame(uint8_t dest[]) {
+  if (!_isEnabled || _serial == nullptr) return 0;
+  // A disconnected sender must not inhibit sleep indefinitely. Resume parsing
+  // from a fresh '<' after one second without input, including millis rollover.
+  if (_state != RECV_STATE_IDLE &&
+      static_cast<uint32_t>(millis() - _last_read_millis) >= SERIAL_RX_FRAME_TIMEOUT_MILLIS) {
+    _state = RECV_STATE_IDLE;
+  }
   while (_serial->available()) {
     int c = _serial->read();
     if (c < 0) break;
+    _last_read_millis = millis();
 
     switch (_state) {
       case RECV_STATE_IDLE:

@@ -1238,7 +1238,7 @@ void UITask::toggleGPS() {
           _node_prefs->gps_enabled = 1;
           notify(UIEventType::ack);
         }
-        the_mesh.savePrefs();
+        the_mesh.saveGpsPrefs();
         showAlert(_node_prefs->gps_enabled ? "GPS: Enabled" : "GPS: Disabled", 800);
         _next_refresh = 0;
         break;

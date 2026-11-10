@@ -412,6 +412,13 @@ size_t SerialBLEInterface::writeFrame(const uint8_t src[], size_t len)
 
 #define BLE_WRITE_MIN_INTERVAL 60
 
+bool SerialBLEInterface::isReadBusy() const
+{
+  // FreeRTOS queries queue occupancy under its own lock; GATT writes enqueue
+  // complete frames, so there is no byte-stream partial frame to time out here.
+  return _isEnabled && recv_queue != nullptr && uxQueueMessagesWaiting(recv_queue) > 0;
+}
+
 bool SerialBLEInterface::isWriteBusy() const
 {
   return millis() < _last_write + BLE_WRITE_MIN_INTERVAL;

@@ -31,6 +31,15 @@ bool CommonRadioPrefs::setByKey(const char* key, const char* value) {
 }
 
 bool CommonRadioPrefs::handleCommand(const char* command, uint32_t sender_timestamp, char* reply) {
+  if (strcmp(command, "get radio.cad") == 0) {
+#ifdef WRAPPER_CLASS
+    snprintf(reply, 160, "> enabled:%s,busy:%lu", radio_driver.isCadEnabled() ? "on" : "off",
+             static_cast<unsigned long>(radio_driver.getCadBusyCount()));
+#else
+    strcpy(reply, "Error: CAD diagnostics unsupported");
+#endif
+    return true;
+  }
   if (strcmp(command, "get radio") == 0) {
     char freq[16], bw[16];
     strcpy(freq, StrHelper::ftoa(getFreq()));

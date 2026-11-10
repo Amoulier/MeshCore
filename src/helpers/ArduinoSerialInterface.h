@@ -8,11 +8,12 @@ class ArduinoSerialInterface : public BaseSerialInterface {
   uint8_t _state;
   uint16_t _frame_len;
   uint16_t rx_len;
+  uint32_t _last_read_millis = 0;
   Stream* _serial;
   uint8_t rx_buf[MAX_FRAME_SIZE];
 
 public:
-  ArduinoSerialInterface() { _isEnabled = false; _state = 0; }
+  ArduinoSerialInterface() : _isEnabled(false), _state(0), _frame_len(0), rx_len(0), _serial(nullptr) {}
 
   void begin(Stream& serial) { 
     _serial = &serial; 
@@ -28,6 +29,7 @@ public:
 
   bool isConnected() const override;
 
+  bool isReadBusy() const override;
   bool isWriteBusy() const override;
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;

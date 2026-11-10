@@ -16,8 +16,9 @@ protected:
   PhysicalLayer* _radio;
   mesh::MainBoard* _board;
   uint32_t n_recv, n_sent, n_recv_errors;
+  uint32_t _cad_busy_count = 0;
   int16_t _noise_floor, _threshold;
-  bool _cad_enabled;
+  bool _cad_enabled = false;
   uint16_t _num_floor_samples;
   int32_t _floor_sample_sum;
   uint8_t _preamble_sf;
@@ -41,6 +42,9 @@ public:
   bool isInRecvMode() const override;
   void pollLatchedReceiveIRQ();
   bool isChannelActive();
+  bool isCadEnabled() const { return _cad_enabled; }
+  // Since begin/resetStats; saturates at UINT32_MAX, never wraps to zero.
+  uint32_t getCadBusyCount() const { return _cad_busy_count; }
 
   bool isReceiving() override {
     if (isReceivingPacket()) return true;
@@ -69,7 +73,7 @@ public:
   uint32_t getPacketsRecv() const { return n_recv; }
   uint32_t getPacketsRecvErrors() const { return n_recv_errors; }
   uint32_t getPacketsSent() const { return n_sent; }
-  void resetStats() { n_recv = n_sent = n_recv_errors = 0; }
+  void resetStats() { n_recv = n_sent = n_recv_errors = _cad_busy_count = 0; }
 
   virtual float getLastRSSI() const override;
   virtual float getLastSNR() const override;

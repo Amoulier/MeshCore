@@ -5,6 +5,9 @@
 #include <RTClib.h>
 #include <helpers/RefCountedDigitalPin.h>
 #include <string.h>
+#ifdef ESP32
+#include <esp_timer.h>
+#endif
 
 #ifndef GPS_EN
     #ifdef PIN_GPS_EN
@@ -47,10 +50,10 @@ class MicroNMEALocationProvider : public LocationProvider {
     bool _peripheral_claimed = false;
     int _pin_reset;
     int _pin_en;
-    unsigned long next_check = 0;
+    uint32_t next_check = 0;
     long time_valid = 0;
-    unsigned long _last_time_sync = 0;
-    static const unsigned long TIME_SYNC_INTERVAL = 1800000; // Re-sync every 30 minutes
+    uint32_t _last_time_sync = 0;
+    static const uint32_t TIME_SYNC_INTERVAL = 1800000; // Re-sync every 30 minutes
 #if defined(HELTEC_V4_SKIP_GPS_STARTUP_PROBE) && HELTEC_V4_SKIP_GPS_STARTUP_PROBE
     bool _suppress_initial_probe = true;
 #endif
@@ -78,6 +81,16 @@ class MicroNMEALocationProvider : public LocationProvider {
     bool _uart_seen = false;
     bool _nmea_seen = false;
     bool _fix_seen = false;
+    uint32_t _fix_sequence = 0;
+    uint64_t _last_fix_tick = 0;
+
+    static uint64_t fixClockMillis() {
+#ifdef ESP32
+        return static_cast<uint64_t>(esp_timer_get_time()) / 1000ULL;
+#else
+        return millis();
+#endif
+    }
 
     static uint32_t ageMs(unsigned long timestamp) {
         return (uint32_t)(millis() - timestamp);
@@ -173,7 +186,7 @@ public :
         }
     }
 
-    void syncTime() override { nmea.clear(); LocationProvider::syncTime(); }
+    void syncTime() override { nmea.clear(); time_valid = 0; LocationProvider::syncTime(); }
     long getLatitude() override { return nmea.getLatitude(); }
     long getLongitude() override { return nmea.getLongitude(); }
     long getAltitude() override { 
@@ -183,10 +196,22 @@ public :
     }
     long satellitesCount() override { return nmea.getNumSatellites(); }
     bool isValid() override { return nmea.isValid(); }
+    uint32_t getFixSequence() const override { return _fix_sequence; }
+    bool getFixAgeSeconds(uint32_t& seconds) const override {
+        if (!_fix_seen) { seconds = 0; return false; }
+#ifdef ESP32
+        const uint64_t age = (fixClockMillis() - _last_fix_tick) / 1000ULL;
+#else
+        const uint64_t age = static_cast<uint32_t>(millis() - _last_fix_tick) / 1000U;
+#endif
+        seconds = age > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(age);
+        return true;
+    }
 
     long getTimestamp() override { 
+        if (nmea.getYear() < 2000) return 0;
         DateTime dt(nmea.getYear(), nmea.getMonth(),nmea.getDay(),nmea.getHour(),nmea.getMinute(),nmea.getSecond());
-        return dt.unixtime();
+        return dt.isValid() ? dt.unixtime() : 0;
     } 
 
     void drain() { while (_gps_serial->available()) _gps_serial->read(); }
@@ -243,6 +268,8 @@ public :
                         (strcmp(message_id, "GGA") == 0 || strcmp(message_id, "RMC") == 0)) {
                         _last_fix_ms = millis();
                         _fix_seen = true;
+                        _last_fix_tick = fixClockMillis();
+                        ++_fix_sequence;
                     }
                 } else {
                     _nmea_checksum_bad++;
@@ -252,7 +279,7 @@ public :
 
         if (!isValid()) time_valid = 0;
 
-        if ((long)(millis() - next_check) > 0) {
+        if (static_cast<int32_t>(static_cast<uint32_t>(millis()) - next_check) > 0) {
             next_check = millis() + 1000;
             // Re-enable time sync periodically when GPS has valid fix
             if (!_time_sync_needed && _clock != NULL && (millis() - _last_time_sync) > TIME_SYNC_INTERVAL) {
@@ -260,9 +287,14 @@ public :
             }
             if (_time_sync_needed && time_valid > 2) {
                 if (_clock != NULL) {
-                    _clock->setCurrentTime(getTimestamp());
-                    _time_sync_needed = false;
-                    _last_time_sync = millis();
+                    // RTCClock's epoch is uint32_t; keep valid dates after 2038
+                    // even though the historical provider API returns long.
+                    const uint32_t timestamp = static_cast<uint32_t>(getTimestamp());
+                    if (timestamp > 0) {
+                        _clock->setCurrentTime(timestamp);
+                        _time_sync_needed = false;
+                        _last_time_sync = millis();
+                    }
                 }
             }
             if (isValid()) {
