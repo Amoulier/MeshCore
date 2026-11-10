@@ -1,0 +1,359 @@
+{
+  "schema": "meshcore-heltec-v4-stage3-redacted-validation-summary-v1",
+  "created_utc": "2026-11-10T02:20:43.245535+00:00",
+  "source_sha": "f04db3d3b70785642a0ee754e62366b0da96b1bf",
+  "source_tree": "fc330fe6fb0e6fe46c1873781ab5e76048a41a6b",
+  "pass": true,
+  "end_to_end_complete": true,
+  "completion_scope": "bounded compatible implementation validation, isolated PM experiments, and verified restoration to normal f04; not production SDK qualification",
+  "normal_firmware": {
+    "version": "v1.1.2-tf04db3d3",
+    "application_sha256": "0eb0e90e2b0bb3f383fe6ae72421c4d63787e98a6cc9dfbfd79cbc73c66dfa8c",
+    "application_bytes": 1634816,
+    "normal_framework_unchanged": true,
+    "custom_pm_framework_in_normal_image": false,
+    "restored": true
+  },
+  "normal_host_and_build": {
+    "native_tests_passed": 196,
+    "roles_passed": 10,
+    "images_verified": 20,
+    "roles": [
+      "solar_repeater",
+      "expansionkit_repeater",
+      "repeater_bridge_espnow",
+      "room_server",
+      "terminal_chat",
+      "companion_radio_usb",
+      "companion_radio_ble",
+      "companion_radio_wifi",
+      "sensor",
+      "kiss_modem"
+    ]
+  },
+  "gps": {
+    "states_and_physical_uart_passed": true,
+    "cycle_opt_in_default_enabled": false,
+    "position_or_fresh_fix_physically_qualified": false,
+    "utc_from_physical_fix_qualified": false,
+    "sky_unavailable_for_user": true,
+    "original_configuration_preserved": {
+      "req": 0,
+      "cycle": 0,
+      "acq": 120,
+      "rest": 900,
+      "hold": 5
+    }
+  },
+  "debug_battery_with_normal_sdk": {
+    "known_frames_total": 64,
+    "rounds": {
+      "gps_off": {
+        "exact_frames": 32,
+        "duplicates": 0,
+        "new_rx_errors": 0,
+        "sleep_count_delta": 4417,
+        "sleep_ms_delta": 88527,
+        "elapsed_seconds": 128.279
+      },
+      "gps_rest": {
+        "exact_frames": 32,
+        "duplicates": 0,
+        "new_rx_errors": 0,
+        "sleep_count_delta": 3957,
+        "sleep_ms_delta": 79301,
+        "elapsed_seconds": 107.879
+      }
+    },
+    "actual_manual_mcu_sleep_during_intervals_observed": true,
+    "per_packet_sleep_timestamp_proven": false
+  },
+  "normal_rf_history": {
+    "gps_on_2_5s_exact_pass": 16,
+    "normal_2_5s_trial_pass": false,
+    "normal_2_5s_eventual_receipts": 16,
+    "normal_2_5s_on_time_receipts": 15,
+    "normal_2_5s_late_latency_ms": 4144.434,
+    "normal_2_5s_reference_rx_error_delta": 1,
+    "normal_5s_trial_exact_pass": 16,
+    "later_pass_does_not_reclassify_failure": true
+  },
+  "pm_lab": {
+    "experimental_only": true,
+    "host_tests_passed": 66,
+    "normal_test_count_includes_pm_tests": false,
+    "stage0": {
+      "complete": true,
+      "exact_frames": 16,
+      "cpu_mhz": [
+        80,
+        80
+      ],
+      "modem_sleep_api_enabled": false
+    },
+    "stage1": {
+      "first_trial_pass": false,
+      "first_receipts": 7,
+      "first_transmissions": 8,
+      "repeat_complete": true,
+      "repeat_exact_frames": 16,
+      "same_image_harness_window_seconds": 5,
+      "missing_packet_cause": "undetermined",
+      "all_stage1_trials_passed": false
+    },
+    "stage2": {
+      "usb_exact_frames": 16,
+      "battery_exact_frames": 16,
+      "paired_ble_active": true,
+      "apb_min_frequency_mhz": 40,
+      "idle_apb_min_delta_us": 12854200,
+      "battery_rf_apb_min_delta_us": 48939098,
+      "manual_mcu_sleep_observed": false,
+      "gatt_unchanged": true,
+      "experimental_only": true
+    },
+    "sdk_rebuild": {
+      "files_compared": 2350,
+      "identical_files": 2349,
+      "different_file": "qio_qspi/sections.ld",
+      "same_absolute_paths_and_host": true,
+      "independent_directory_or_host_rebuild": false,
+      "all_libraries_and_headers_identical_in_repeat": true,
+      "full_byte_reproducibility_proven": false
+    },
+    "stable_sdk_qualified": false,
+    "current_measured": false,
+    "ble_controller_sleep_residency_per_event_observed": false
+  },
+  "normal_restoration": {
+    "application_only": true,
+    "application_verified": true,
+    "boot_separately_verified": true,
+    "protected_regions_unchanged": [
+      "nvs",
+      "otadata",
+      "app1",
+      "spiffs",
+      "coredump",
+      "bootloader",
+      "partition_table"
+    ],
+    "new_backup_created": false,
+    "user_data_exported": false,
+    "settings_evidence": {
+      "normal_gps_configuration_directly_read": true,
+      "normal_custom_values_directly_read": false,
+      "normal_display_preference_directly_read": false,
+      "full_custom_display_runtime_verified_before_normal_flash": true,
+      "non_app_data_and_inactive_app_unchanged_during_normal_flash": true,
+      "user_confirmed_final_display_and_phone": true,
+      "normal_runtime_sleep_directly_read": true,
+      "original_gps": {
+        "req": 0,
+        "cycle": 0,
+        "acq": 120,
+        "rest": 900,
+        "hold": 5
+      },
+      "original_custom": {
+        "gps": 0,
+        "gps_interval": 1,
+        "gps_cycle": 0,
+        "gps_acquire": 120,
+        "gps_rest": 900,
+        "gps_hold": 5
+      },
+      "original_display": "on",
+      "original_runtime_sleep": 1
+    }
+  },
+  "normal_final_rf": {
+    "exact_frames": 16,
+    "frames_each_direction": 8,
+    "window_seconds": 5.0,
+    "late_receipts": 0,
+    "duplicate_receipts": 0,
+    "new_rx_errors": {
+      "dut": 0,
+      "reference": 0
+    }
+  },
+  "manual_final": {
+    "pass": true,
+    "evidence_type": "explicit_user_confirmation",
+    "exact_user_reply": "si todo correcto",
+    "phone_connects_without_repairing": true,
+    "usual_data_visible": true,
+    "prg_pin_and_uptime_readable": true,
+    "oled_auto_off_approximately_15_seconds": true,
+    "automatic_ui_observation_claimed": false,
+    "pin_recorded": false
+  },
+  "recommendations_disposition": {
+    "implemented_normal": [
+      "PATH bounds",
+      "pending work guards",
+      "reset/pins diagnostics",
+      "OLED uptime/status",
+      "CAD read-only diagnostic",
+      "serial read-busy and fragment expiry",
+      "opt-in GPS cycle and shared commands"
+    ],
+    "isolated_experiment_not_normal": [
+      "custom PM framework and BLE-active DFS/modem-sleep prototype"
+    ],
+    "explicit_future_role_adaptation": [
+      "20 ms sleep engine for Room Server/Sensor; not implemented or physically tested"
+    ],
+    "not_adopted_to_preserve_policy": [
+      "RXPS defaults",
+      "default LNA off",
+      "lower TX",
+      "external 5/30 s sleep loops",
+      "blind persistence/schema replacement",
+      "global TCXO1600 without measurement"
+    ],
+    "deferred_with_reason": [
+      "INA228 requires hardware/shunt and Wh-to-kWh correction",
+      "periodic reboot requires need and drain/save policy",
+      "Dev outpath/login/ACL requires sentinel and migration redesign"
+    ],
+    "existing_features_preserved": [
+      "transactional persistence and role-separated prefs",
+      "ANON/LPP bounds",
+      "Wi-Fi credential privacy",
+      "RTC retention",
+      "range RX and nominal maximum TX policy",
+      "shared VEXT/OLED/GPS ownership"
+    ]
+  },
+  "limits": {
+    "all_trials_passed": false,
+    "current_or_autonomy_measured": false,
+    "rf_power_measured": false,
+    "receiver_sensitivity_measured": false,
+    "three_node_authenticated_routing_qualified": false,
+    "gps_fresh_fix_or_utc_physically_qualified": false,
+    "custom_sdk_wifi_qualified": false,
+    "custom_sdk_manual_mcu_sleep_qualified": false,
+    "custom_sdk_solar_qualified": false,
+    "all_serial_fragmentation_physically_tested": false,
+    "repeater_new_oled_physically_tested": false,
+    "room_sensor_20ms_engine_implemented": false,
+    "long_duration_or_solar_cycle_qualified": false
+  },
+  "publication_state": {
+    "main_or_stable_sha_at_cut": "62e184a6f104a0f75bb5054e64471275c553b6e8",
+    "main_merged": false,
+    "release_published": false,
+    "documentation_only_preparation": true
+  },
+  "privacy": {
+    "node_addresses_or_identity_hashes_included": false,
+    "pin_included": false,
+    "coordinates_included": false,
+    "keys_contacts_or_message_content_included": false
+  },
+  "evidence": {
+    "../../docs/HELTEC_V4_EASYSKYMESH_COMPARISON_2026-11-09.md": {
+      "path_from_docs": "HELTEC_V4_EASYSKYMESH_COMPARISON_2026-11-09.md",
+      "sha256": "70585e4f02b379eb2287313bb253003dad0d6cd7145ab1635e5543534b847744"
+    },
+    "../../docs/HELTEC_V4_EASYSKYMESH_INTEGRATION_2026-11-09.md": {
+      "path_from_docs": "HELTEC_V4_EASYSKYMESH_INTEGRATION_2026-11-09.md",
+      "sha256": "666db56fbe47eb07526015701843f91c248e7704bccbc4cd97d6a23149b8501a"
+    },
+    "native-tests-final.log": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/native-tests-final.log",
+      "sha256": "261075bfea86154808678f0575556ce10b13c49660a195720ede960229595885"
+    },
+    "candidate-build-results.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/candidate-build-results.json",
+      "sha256": "05b78226eade7871e25835c5a3a310a62f465f9c1267000062e8c1de4775de65"
+    },
+    "candidate-SHA256SUMS.txt": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/candidate-SHA256SUMS.txt",
+      "sha256": "f0fa940edf482ebf0733ab8439a8e161a9dc5187e8b9e6e54d833638c3b3fad8"
+    },
+    "gps-physical-validation.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/gps-physical-validation.json",
+      "sha256": "d40ca2baebb2875e2cf5e4ac6a84f17bda6dfb4f134924238278f99a25a87fde"
+    },
+    "rf-candidate-gps-on-attempt-1794271120127284000-696a7a.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/rf-candidate-gps-on-attempt-1794271120127284000-696a7a.json",
+      "sha256": "56318710ec1be1de8dd4d04076b78e6423d97e4186f2c3a99f37417757dfe513"
+    },
+    "rf-candidate-attempt-1794272163079418700-08e977.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/rf-candidate-attempt-1794272163079418700-08e977.json",
+      "sha256": "d53781af448a9a07b1130ec02416a5958733afa42d7a6eba8af6a1fa3d0bca9f"
+    },
+    "rf-candidate-attempt-1794272407458934800-708959.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/rf-candidate-attempt-1794272407458934800-708959.json",
+      "sha256": "75e7ec79ceb6d726b3a059f3e0c262e67b6e33912e71b2d5a59250352f11a83b"
+    },
+    "framework-lab/firmware-instrumentation/native-tests/results/1794272376902554800/verification-manifest.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/framework-lab/firmware-instrumentation/native-tests/results/1794272376902554800/verification-manifest.json",
+      "sha256": "975b70f56f1f6f14186f1dfa1edd9864c0b93668f95f51740287f4775c76fbd2"
+    },
+    "framework-lab/results/sdk-clean-rebuild-comparison.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/framework-lab/results/sdk-clean-rebuild-comparison.json",
+      "sha256": "dac07a8e1724b671ec08777009ebcb04ea11bd94bdbe2587a7641de72e935a6d"
+    },
+    "framework-lab/results/framework-package-manifest.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/framework-lab/results/framework-package-manifest.json",
+      "sha256": "05f34b0a2d01b8a5ad8d335c3774fb0b534b4e1fb6e38d685a0307c60f892c1b"
+    },
+    "pm-stage0-attempt-1794274002436457200-ee0d2c/pm-stage0-validation.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/pm-stage0-attempt-1794274002436457200-ee0d2c/pm-stage0-validation.json",
+      "sha256": "befff9297f8db55533192ce57d9bfe6c46f06001f7b97800854c96b194436113"
+    },
+    "pm-stage1-attempt-1794274858008059200-6ae800/pm-stage1-validation.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/pm-stage1-attempt-1794274858008059200-6ae800/pm-stage1-validation.json",
+      "sha256": "7a3cbd302241e915f4e6ecec897d0c4b441aa27f4a98fa48943ea334cf0cac96"
+    },
+    "pm-stage1-attempt-1794275019721691200-f80b98/pm-stage1-validation.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/pm-stage1-attempt-1794275019721691200-f80b98/pm-stage1-validation.json",
+      "sha256": "65d96136a92771878e723222b75891972ecd8866330b780614b7d121df7009f8"
+    },
+    "joint-f04-validation-closure-1794277046637212400.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/joint-f04-validation-closure-1794277046637212400.json",
+      "sha256": "4ecc7a2a4e80922cd6dc4f3b8a63e4ae7a61dec3db43931198af5e00cb16f8e9"
+    },
+    "sleep-gps-debug-evidence.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/sleep-gps-debug-evidence.json",
+      "sha256": "2451fd8ef8edffc8db8f0752321ed3c59d498c89ac8c2eeeda5450d1ff2e2dfc"
+    },
+    "pm-stage2-attempt-1794276108810686300-a26c12/pm-stage2-validation.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/pm-stage2-attempt-1794276108810686300-a26c12/pm-stage2-validation.json",
+      "sha256": "6f0af6706e2fb7044ccf25b197ddd913b4e7c9a7c850b5184f7ed60a90f58fda"
+    },
+    "pm-stage1-trial-history-and-promotion.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/pm-stage1-trial-history-and-promotion.json",
+      "sha256": "fb1428cbc92404b46a804eaa10cc96eef50ae85a5b4a993172f340fa8918ed89"
+    },
+    "controlled-app-transition-attempt-1794276033556513800.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/controlled-app-transition-attempt-1794276033556513800.json",
+      "sha256": "f5069784833b58ae3144f7a778334e13835af602466e20e8058997bfda970b97"
+    },
+    "pm-stage2-attempt-1794276108810686300-a26c12/settings-restored-before-usb-reconnect.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/pm-stage2-attempt-1794276108810686300-a26c12/settings-restored-before-usb-reconnect.json",
+      "sha256": "6382bfe34631a4c43128d4dcf9394e3b28a55239d040ce66c933313a70e88e88"
+    },
+    "controlled-app-transition-attempt-1794276638598572500.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/controlled-app-transition-attempt-1794276638598572500.json",
+      "sha256": "648fe5a5d8019bb1e2a6d042033c39f5156ea7ea2f6706394ad6fbb840da2b8e"
+    },
+    "transition-preflight-1794276713039024300-1eff04.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/transition-preflight-1794276713039024300-1eff04.json",
+      "sha256": "4e1559a0351d85123f4c5391334aeb53a8ea20e02e4c12b684c974083e3355de"
+    },
+    "rf-final-candidate-attempt-1794276728811996300-9f9d9c.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/rf-final-candidate-attempt-1794276728811996300-9f9d9c.json",
+      "sha256": "4d194ba185aed1041535ab600e6108e616ab80079683336c60d190d1501e61d3"
+    },
+    "final-phone-oled-user-confirmation.json": {
+      "path_from_docs": "../out/easyskymesh-stage3-2026-11-09/final-phone-oled-user-confirmation.json",
+      "sha256": "7783e11cceaded1f60b167755de288b0d934f184963237451eaade92bdb20735"
+    }
+  }
+}
