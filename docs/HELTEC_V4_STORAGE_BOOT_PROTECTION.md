@@ -63,8 +63,16 @@ SPIFFS/partition/USB mocks. Its 16 regression cases cover:
   executing before yielding.
 
 The suite is included in both the ordinary CI and stable-release validation.
-Tests of this startup policy simulate failures; they are not physical power-cut
-tests and do not prove recovery of an arbitrarily corrupted SPIFFS filesystem.
+It simulates storage failures, including an incomplete first-use format.
+
+On 2026-11-11, the Companion BLE test node running `v1.1.2-t1873e75f` was
+disconnected from USB and battery for 20 seconds with its settings already
+saved. The subsequent boot reported a power-on reset. The firmware, node
+identity, LoRa settings, and GPS settings matched the pre-cut readings, and
+the phone reconnected successfully. On-device digests matched for six of
+seven protected regions, including NVS. The whole SPIFFS partition digest
+differed between the two readings, and the cause was undetermined. The
+hardware test covers a complete power interruption with saved settings.
 
 ## Limits
 
