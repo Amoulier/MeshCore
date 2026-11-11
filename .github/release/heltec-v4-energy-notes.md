@@ -40,7 +40,7 @@ after a 20-second interruption of both USB and battery power with its
 settings already saved. The node retained its identity and LoRa and GPS
 settings. The phone reconnected, and the user confirmed their usual contacts
 and channels were visible. The release packages are built from the tagged
-source by GitHub Actions.
+source.
 
 This independent fork carries forward the v1.1.2 fork base at `62e184a6`.
 Its Heltec V4 specialization began from upstream MeshCore commit
