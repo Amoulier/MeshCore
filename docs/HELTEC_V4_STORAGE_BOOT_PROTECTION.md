@@ -68,8 +68,9 @@ It simulates storage failures, including an incomplete first-use format.
 On 2026-11-11, the Companion BLE test node running `v1.1.2-t1873e75f` was
 disconnected from USB and battery for 20 seconds with its settings already
 saved. The subsequent boot reported a power-on reset. The firmware, node
-identity, LoRa settings, and GPS settings matched the pre-cut readings, and
-the phone reconnected successfully. On-device digests matched for six of
+identity, LoRa settings, and GPS settings matched the pre-cut readings. The
+user confirmed the phone reconnected successfully and the usual contacts and
+channels were visible in MeshCore. On-device digests matched for six of
 seven protected regions, including NVS. The whole SPIFFS partition digest
 differed between the two readings, and the cause was undetermined. The
 hardware test covers a complete power interruption with saved settings.
