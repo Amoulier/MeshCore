@@ -1,6 +1,6 @@
-# MeshCore Heltec V4 — stable v1.1.2
+# MeshCore Heltec V4 — stable v1.2.0
 
-Guide date: 29 October 2026.
+Guide date: 11 November 2026.
 
 These images target the Heltec WiFi LoRa 32 V4 OLED family. Select the role
 that matches the node's intended use. TFT and R8 targets are not included.
